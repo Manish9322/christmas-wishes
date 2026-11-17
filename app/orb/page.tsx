@@ -2,11 +2,23 @@ import type {Metadata} from 'next';
 import OrnamentExperience from '@/components/OrnamentExperience';
 
 export const metadata: Metadata = {
-  title: 'Holiday Ornament | Faceted Holiday Egg',
+  title: 'Christmas Ornament | A Little Christmas Wish',
   description:
-    'An interactive monochromatic 3D Christmas ornament that opens to reveal a festive celebration.',
+    'A little interactive Christmas greeting ornament to share joy, warmth, peace, and happiness with the people who matter.',
+  openGraph: {
+    title: 'Merry Christmas!',
+    description:
+      'A little Christmas surprise, created to share warm wishes and festive happiness.',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Merry Christmas!',
+    description:
+      'A little Christmas surprise, created to share warm wishes and festive happiness.',
+  },
 };
 
-export default function LightOrnamentPage() {
+export default function ChristmasOrnamentPage() {
   return <OrnamentExperience />;
 }

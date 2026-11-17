@@ -21,20 +21,24 @@ const raleway = Raleway({
 });
 
 export const metadata: Metadata = {
-  title: 'Faceted Holiday Egg',
+  title: {
+    default: 'Merry Christmas | A Little Christmas Wish',
+    template: '%s | A Little Christmas Wish',
+  },
   description:
-    'An interactive monochromatic 3D polygon-faceted egg that cracks open to reveal a festive celebration.',
+    'A little interactive Christmas greeting to share joy, warmth, peace, and happiness with the people who matter.',
   openGraph: {
-    title: 'Faceted Holiday Egg',
+    title: 'Merry Christmas!',
     description:
-      'An interactive monochromatic 3D polygon-faceted egg that cracks open to reveal a festive celebration.',
+      'A little Christmas surprise, created to share warm wishes and festive happiness.',
+    siteName: 'A Little Christmas Wish',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Faceted Holiday Egg',
+    title: 'Merry Christmas!',
     description:
-      'An interactive monochromatic 3D polygon-faceted egg that cracks open to reveal a festive celebration.',
+      'A little Christmas surprise, created to share warm wishes and festive happiness.',
   },
 };
 

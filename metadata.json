@@ -1,6 +1,6 @@
 {
-  "name": "Faceted Holiday Egg",
-  "description": "An interactive monochromatic 3D polygon-faceted egg that cracks open to reveal a festive celebration.",
+  "name": "A Little Christmas Wish",
+  "description": "A little interactive Christmas greeting to share joy, warmth, peace, and happiness with the people who matter.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

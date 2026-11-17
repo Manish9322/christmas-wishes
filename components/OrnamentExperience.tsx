@@ -28,10 +28,52 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function computeDefaultDistance(width: number, height: number): number {
-  const aspect = width / Math.max(1, height);
-  if (aspect >= 1.1) return 5.0;
-  return THREE.MathUtils.clamp(5.0 / Math.max(0.68, aspect * 1.12), 5.0, 7.1);
+const CAMERA_FOV_DEG = 40;
+const TAN_HALF_V = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
+const SIN_HALF_V = Math.sin(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
+const ORNAMENT_SCALE = 0.82;
+
+interface ViewportFraming {
+  defaultDistance: number;
+  minDistanceIntact: number;
+  minDistanceOpened: number;
+  maxDistance: number;
+}
+
+function computeViewportFraming(width: number, height: number): ViewportFraming {
+  const aspect = Math.max(0.35, width / Math.max(1, height));
+  const tanHalfH = aspect * TAN_HALF_V;
+  const sinHalfH = tanHalfH / Math.sqrt(1 + tanHalfH * tanHalfH);
+
+  // Full animated bounding radii (scaled by ORNAMENT_SCALE, accounting for split separation, cap/loop, tilt, float, and drag)
+  const openRadiusV = 1.82;
+  const openRadiusH = 1.62;
+  const intactRadiusV = 1.1;
+  const intactRadiusH = 0.92;
+
+  const defaultDistance = Math.max(
+    openRadiusV / (0.78 * SIN_HALF_V),
+    openRadiusH / (0.8 * sinHalfH),
+  );
+
+  const minDistanceIntact = Math.max(
+    intactRadiusV / (0.86 * SIN_HALF_V),
+    intactRadiusH / (0.86 * sinHalfH),
+  );
+
+  const minDistanceOpened = Math.max(
+    openRadiusV / (0.88 * SIN_HALF_V),
+    openRadiusH / (0.88 * sinHalfH),
+  );
+
+  const maxDistance = defaultDistance * 1.48;
+
+  return {
+    defaultDistance,
+    minDistanceIntact,
+    minDistanceOpened,
+    maxDistance,
+  };
 }
 
 let cachedGlCapability: {supported: boolean; isSoftwareGl: boolean} | null = null;
@@ -100,14 +142,17 @@ export default function OrnamentExperience() {
 
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-    let defaultDistance = computeDefaultDistance(width, height);
-    let minDistance = defaultDistance * 0.54;
-    let maxDistance = defaultDistance * 1.68;
-    let targetDistance = defaultDistance;
-    let currentDistance = defaultDistance;
-    camera.position.set(0, 0.14, currentDistance);
-    camera.lookAt(0, 0.08, 0);
+    const camera = new THREE.PerspectiveCamera(
+      CAMERA_FOV_DEG,
+      width / Math.max(1, height),
+      0.1,
+      100,
+    );
+    let framing = computeViewportFraming(width, height);
+    let targetDistance = framing.defaultDistance;
+    let currentDistance = framing.defaultDistance;
+    camera.position.set(0, 0.08, currentDistance);
+    camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
@@ -188,15 +233,16 @@ export default function OrnamentExperience() {
       depthWrite: false,
       opacity: 0.5,
     });
-    const shadowGeo = new THREE.PlaneGeometry(3.4, 3.4);
+    const shadowGeo = new THREE.PlaneGeometry(2.9, 2.9);
     const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
     shadowPlane.rotation.x = -Math.PI / 2;
-    shadowPlane.position.y = -1.52;
+    shadowPlane.position.y = -1.28;
     scene.add(shadowPlane);
 
-    // Ornament hierarchy (shifted slightly down so ball + crown loop sit visually centered)
+    // Ornament hierarchy (scaled & optically centered including crown cap and hanging loop)
     const ornamentRoot = new THREE.Group();
-    ornamentRoot.position.y = -0.08;
+    ornamentRoot.scale.setScalar(ORNAMENT_SCALE);
+    ornamentRoot.position.y = -0.16;
     scene.add(ornamentRoot);
 
     const upperPivot = new THREE.Group();
@@ -372,8 +418,13 @@ export default function OrnamentExperience() {
     let prevPinchDist: number | null = null;
     let lastHoverCheck = 0;
 
+    const getActiveMinDistance = () =>
+      phaseRef.current === 'intact'
+        ? framing.minDistanceIntact
+        : framing.minDistanceOpened;
+
     const syncZoomStateFlag = () => {
-      const zoomed = targetDistance < defaultDistance - 0.16;
+      const zoomed = targetDistance < framing.defaultDistance - 0.16;
       if (zoomed !== zoomedInRef.current) {
         zoomedInRef.current = zoomed;
         setIsZoomedIn(zoomed);
@@ -388,16 +439,16 @@ export default function OrnamentExperience() {
 
       for (let i = 0; i < totalConfetti; i++) {
         const idx = i * 3;
-        cPos[idx] = (Math.random() - 0.5) * 0.24;
-        cPos[idx + 1] = (Math.random() - 0.5) * 0.24 - 0.06;
-        cPos[idx + 2] = (Math.random() - 0.5) * 0.24;
+        cPos[idx] = (Math.random() - 0.5) * 0.2;
+        cPos[idx + 1] = (Math.random() - 0.5) * 0.2 - 0.06;
+        cPos[idx + 2] = (Math.random() - 0.5) * 0.2;
 
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        const speed = 2.6 + Math.random() * 4.2;
+        const speed = 2.4 + Math.random() * 3.8;
 
         cVel[idx] = Math.sin(phi) * Math.cos(theta) * speed;
-        cVel[idx + 1] = Math.cos(phi) * speed * 0.9 + 1.15;
+        cVel[idx + 1] = Math.cos(phi) * speed * 0.9 + 1.1;
         cVel[idx + 2] = Math.sin(phi) * Math.sin(theta) * speed;
 
         cRot[idx] = Math.random() * Math.PI * 2;
@@ -408,7 +459,7 @@ export default function OrnamentExperience() {
         cRotVel[idx + 1] = (Math.random() - 0.5) * 9;
         cRotVel[idx + 2] = (Math.random() - 0.5) * 9;
 
-        cScale[i] = 0.65 + Math.random() * 0.95;
+        cScale[i] = 0.6 + Math.random() * 0.9;
         cDrag[i] = 1.65 + Math.random() * 1.1;
         cPhase[i] = Math.random() * Math.PI * 2;
       }
@@ -418,6 +469,12 @@ export default function OrnamentExperience() {
       if (phaseRef.current !== 'intact') return;
       phaseRef.current = 'opened';
       openElapsed = 0;
+      targetDistance = THREE.MathUtils.clamp(
+        targetDistance,
+        framing.minDistanceOpened,
+        framing.maxDistance,
+      );
+      syncZoomStateFlag();
       setOrnamentPhase('opened');
       setIsHoveringOrnament(false);
       spawnCelebrationBurst();
@@ -440,8 +497,8 @@ export default function OrnamentExperience() {
 
       if (hits.length === 0) return;
 
-      if (targetDistance < defaultDistance - 0.16) {
-        targetDistance = defaultDistance;
+      if (targetDistance < framing.defaultDistance - 0.16) {
+        targetDistance = framing.defaultDistance;
         syncZoomStateFlag();
         return;
       }
@@ -456,8 +513,8 @@ export default function OrnamentExperience() {
       const delta = e.deltaY * 0.0038;
       targetDistance = THREE.MathUtils.clamp(
         targetDistance + delta,
-        minDistance,
-        maxDistance,
+        getActiveMinDistance(),
+        framing.maxDistance,
       );
       syncZoomStateFlag();
     };
@@ -506,8 +563,8 @@ export default function OrnamentExperience() {
           const diff = prevPinchDist - pinchDist;
           targetDistance = THREE.MathUtils.clamp(
             targetDistance + diff * 0.015,
-            minDistance,
-            maxDistance,
+            getActiveMinDistance(),
+            framing.maxDistance,
           );
           syncZoomStateFlag();
         }
@@ -588,19 +645,21 @@ export default function OrnamentExperience() {
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerCancel);
 
-    const onResize = () => {
+    const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth || window.innerWidth;
       const h = container.clientHeight || window.innerHeight;
-      const prevDefault = defaultDistance;
-      defaultDistance = computeDefaultDistance(w, h);
-      minDistance = defaultDistance * 0.54;
-      maxDistance = defaultDistance * 1.68;
+      const prevDefault = framing.defaultDistance;
+      framing = computeViewportFraming(w, h);
 
       if (Math.abs(targetDistance - prevDefault) < 0.25) {
-        targetDistance = defaultDistance;
+        targetDistance = framing.defaultDistance;
       } else {
-        targetDistance = THREE.MathUtils.clamp(targetDistance, minDistance, maxDistance);
+        targetDistance = THREE.MathUtils.clamp(
+          targetDistance,
+          getActiveMinDistance(),
+          framing.maxDistance,
+        );
       }
       syncZoomStateFlag();
 
@@ -609,7 +668,12 @@ export default function OrnamentExperience() {
       renderer.setSize(w, h);
       renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     };
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', handleResize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(handleResize)
+        : null;
+    resizeObserver?.observe(container);
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
@@ -651,8 +715,8 @@ export default function OrnamentExperience() {
 
       currentDistance = THREE.MathUtils.damp(currentDistance, targetDistance, 8.5, dt);
       camera.position.z = currentDistance;
-      camera.position.y = 0.14;
-      camera.lookAt(0, 0.08, 0);
+      camera.position.y = 0.08;
+      camera.lookAt(0, 0, 0);
 
       if (!isDragging) {
         rotY += velY * dt;
@@ -676,31 +740,31 @@ export default function OrnamentExperience() {
       ornamentRoot.rotation.x = rotX;
       ornamentRoot.rotation.z = rotZ;
 
-      const idleFloat = prefersReducedMotion ? 0 : Math.sin(elapsedTotal * 1.25) * 0.04;
-      ornamentRoot.position.y = -0.08 + idleFloat;
+      const idleFloat = prefersReducedMotion ? 0 : Math.sin(elapsedTotal * 1.25) * 0.032;
+      ornamentRoot.position.y = -0.16 + idleFloat;
 
       if (phaseRef.current === 'opened') {
         openElapsed += dt;
 
         const splitActive = openElapsed > 0.08;
-        const floatA = prefersReducedMotion ? 0 : Math.sin(openElapsed * 1.45) * 0.04;
-        const floatB = prefersReducedMotion ? 0 : Math.cos(openElapsed * 1.35) * 0.035;
+        const floatA = prefersReducedMotion ? 0 : Math.sin(openElapsed * 1.45) * 0.035;
+        const floatB = prefersReducedMotion ? 0 : Math.cos(openElapsed * 1.35) * 0.03;
 
-        const targetUpperPosX = splitActive ? -0.32 : 0;
-        const targetUpperPosY = splitActive ? 0.94 + floatA : 0;
-        const targetUpperPosZ = splitActive ? -0.16 : 0;
+        const targetUpperPosX = splitActive ? -0.26 : 0;
+        const targetUpperPosY = splitActive ? 0.76 + floatA : 0;
+        const targetUpperPosZ = splitActive ? -0.13 : 0;
 
-        const targetUpperRotX = splitActive ? -0.32 : 0;
-        const targetUpperRotY = splitActive ? 0.18 : 0;
-        const targetUpperRotZ = splitActive ? 0.34 : 0;
+        const targetUpperRotX = splitActive ? -0.28 : 0;
+        const targetUpperRotY = splitActive ? 0.16 : 0;
+        const targetUpperRotZ = splitActive ? 0.3 : 0;
 
-        const targetLowerPosX = splitActive ? 0.26 : 0;
-        const targetLowerPosY = splitActive ? -0.86 + floatB : 0;
-        const targetLowerPosZ = splitActive ? 0.14 : 0;
+        const targetLowerPosX = splitActive ? 0.22 : 0;
+        const targetLowerPosY = splitActive ? -0.7 + floatB : 0;
+        const targetLowerPosZ = splitActive ? 0.11 : 0;
 
-        const targetLowerRotX = splitActive ? 0.26 : 0;
-        const targetLowerRotY = splitActive ? -0.16 : 0;
-        const targetLowerRotZ = splitActive ? -0.28 : 0;
+        const targetLowerRotX = splitActive ? 0.24 : 0;
+        const targetLowerRotY = splitActive ? -0.14 : 0;
+        const targetLowerRotZ = splitActive ? -0.26 : 0;
 
         const lambda = 4.6;
         upperPivot.position.x = THREE.MathUtils.damp(upperPivot.position.x, targetUpperPosX, lambda, dt);
@@ -859,12 +923,13 @@ export default function OrnamentExperience() {
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
 
+      resizeObserver?.disconnect();
       canvasEl.removeEventListener('wheel', onWheel);
       canvasEl.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerCancel);
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener('resize', handleResize);
       canvasEl.removeEventListener('webglcontextlost', onContextLost);
       canvasEl.removeEventListener('webglcontextrestored', onContextRestored);
 
@@ -910,7 +975,7 @@ export default function OrnamentExperience() {
 
   return (
     <main
-      className={`relative w-screen h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#1b1b1f_0%,#0e0e11_48%,#070709_100%)] ${cursorClass}`}
+      className={`relative w-full h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#1b1b1f_0%,#0e0e11_48%,#070709_100%)] ${cursorClass}`}
     >
       {/* Isolated WebGL mount container */}
       <div

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export interface EggShellGeometries {
+export interface WishShellGeometries {
   upperGeometry: THREE.BufferGeometry;
   lowerGeometry: THREE.BufferGeometry;
   upperEdgeGeometry: THREE.BufferGeometry;
@@ -24,7 +24,10 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function sphereToEgg(u: THREE.Vector3, target = new THREE.Vector3()): THREE.Vector3 {
+function mapSphereToSculpture(
+  u: THREE.Vector3,
+  target = new THREE.Vector3(),
+): THREE.Vector3 {
   const rx = 0.96;
   const ry = 1.32;
   const taper = 1.0 - 0.21 * u.y - 0.04 * u.y * u.y;
@@ -32,7 +35,12 @@ function sphereToEgg(u: THREE.Vector3, target = new THREE.Vector3()): THREE.Vect
   return target;
 }
 
-function makeFace(points: THREE.Vector3[], a: number, b: number, c: number): HullFace {
+function makeFace(
+  points: THREE.Vector3[],
+  a: number,
+  b: number,
+  c: number,
+): HullFace {
   const pa = points[a];
   const pb = points[b];
   const pc = points[c];
@@ -63,7 +71,9 @@ function computeSphericalConvexHull(points: THREE.Vector3[]): HullFace[] {
     }
   }
 
-  const lineDir = new THREE.Vector3().subVectors(points[i1], points[i0]).normalize();
+  const lineDir = new THREE.Vector3()
+    .subVectors(points[i1], points[i0])
+    .normalize();
   let i2 = -1;
   let maxLineDist = -1;
   const tmp = new THREE.Vector3();
@@ -162,7 +172,7 @@ const MONOCHROME_PALETTE = [
   0xf4f4f5, // crisp off-white
 ];
 
-export function createFacetedEggGeometries(): EggShellGeometries {
+export function createFacetedWishGeometries(): WishShellGeometries {
   const rand = mulberry32(20261224);
   const seedCount = 108;
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
@@ -190,7 +200,7 @@ export function createFacetedEggGeometries(): EggShellGeometries {
 
   const hullFaces = computeSphericalConvexHull(seeds);
 
-  // Dual vertices on unit sphere & mapped onto egg surface
+  // Dual vertices on unit sphere & mapped onto outer sculptural shell surface
   const dualUnit: THREE.Vector3[] = [];
   const dualOuter: THREE.Vector3[] = [];
   const dualInner: THREE.Vector3[] = [];
@@ -210,13 +220,14 @@ export function createFacetedEggGeometries(): EggShellGeometries {
     const circum = new THREE.Vector3().crossVectors(ab, ac).normalize();
     if (circum.dot(centroid) < 0) circum.negate();
 
-    const dualPt = new THREE.Vector3().lerpVectors(centroid, circum, 0.52).normalize();
+    const dualPt = new THREE.Vector3()
+      .lerpVectors(centroid, circum, 0.52)
+      .normalize();
     dualUnit.push(dualPt);
 
-    const outerPos = sphereToEgg(dualPt);
+    const outerPos = mapSphereToSculpture(dualPt);
     dualOuter.push(outerPos);
 
-    // Estimate surface normal via finite difference on egg mapping or radial direction
     const innerPos = outerPos.clone().addScaledVector(dualPt, -shellThickness);
     dualInner.push(innerPos);
 
@@ -269,7 +280,10 @@ export function createFacetedEggGeometries(): EggShellGeometries {
         const dx = d.x - p.x;
         const dy = d.y - p.y;
         const dz = d.z - p.z;
-        const angle = Math.atan2(dx * t2.x + dy * t2.y + dz * t2.z, dx * t1.x + dy * t1.y + dz * t1.z);
+        const angle = Math.atan2(
+          dx * t2.x + dy * t2.y + dz * t2.z,
+          dx * t1.x + dy * t1.y + dz * t1.z,
+        );
         return {fIdx, angle};
       })
       .sort((a, b) => a.angle - b.angle)
@@ -303,7 +317,7 @@ export function createFacetedEggGeometries(): EggShellGeometries {
     if (normal.dot(p) < 0) normal.negate();
 
     // Curated tonal distribution: gentle architectural contrast across monochrome shades
-    const heightBias = (p.y + 1) * 0.5; // 0 bottom .. 1 top
+    const heightBias = (p.y + 1) * 0.5;
     const rawTone = rand() * 0.78 + heightBias * 0.22;
     const paletteIdx = Math.min(
       MONOCHROME_PALETTE.length - 1,
@@ -312,11 +326,11 @@ export function createFacetedEggGeometries(): EggShellGeometries {
     const color = new THREE.Color(MONOCHROME_PALETTE[paletteIdx]);
 
     const phi = Math.atan2(centroidOuter.z, centroidOuter.x);
-    const crackY =
+    const splitY =
       0.04 +
       0.11 * Math.sin(2 * phi + 0.65) +
       0.055 * Math.cos(3 * phi - 0.45);
-    const isUpper = centroidOuter.y >= crackY;
+    const isUpper = centroidOuter.y >= splitY;
 
     facets.push({
       seedIdx: i,
@@ -364,7 +378,7 @@ export function createFacetedEggGeometries(): EggShellGeometries {
     b.colors.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
   };
 
-  // Map dual edge (fA, fB) -> facets sharing it so we can detect fracture seam edges
+  // Map dual edge (fA, fB) -> facets sharing it so we can detect parting seam edges
   const dualEdgeToFacets = new Map<string, number[]>();
   for (let fi = 0; fi < facets.length; fi++) {
     const d = facets[fi].dualIndices;
@@ -398,7 +412,7 @@ export function createFacetedEggGeometries(): EggShellGeometries {
       // Inner dark cavity triangle (reversed winding)
       pushTri(target, facet.centroidInner, iB, iA, inwardNormal, innerColor);
 
-      // Polygon perimeter hairline edge (nudged radially outward by 0.002 to avoid z-fighting)
+      // Polygon perimeter hairline edge (nudged radially outward by 0.0025 to avoid z-fighting)
       const edgeKey = fA < fB ? `${fA}_${fB}` : `${fB}_${fA}`;
       if (!target.seenEdges.has(edgeKey)) {
         target.seenEdges.add(edgeKey);
@@ -407,18 +421,24 @@ export function createFacetedEggGeometries(): EggShellGeometries {
         target.edgePositions.push(eA.x, eA.y, eA.z, eB.x, eB.y, eB.z);
       }
 
-      // Check if this edge lies on the fracture seam between Upper and Lower halves
+      // Check if this edge lies on the parting seam between Upper and Lower halves
       const sharing = dualEdgeToFacets.get(edgeKey);
       if (sharing && sharing.length === 2) {
         const other = facets[sharing[0] === fi ? sharing[1] : sharing[0]];
         if (other.isUpper !== facet.isUpper) {
-          // Emit wall bevel quad along the fracture edge so the shell has solid thickness
+          // Emit wall bevel quad along the seam edge so the shell has solid thickness
           const edgeVec = new THREE.Vector3().subVectors(pB, pA);
           const wallVec = new THREE.Vector3().subVectors(iA, pA);
-          const rimNormal = new THREE.Vector3().crossVectors(edgeVec, wallVec).normalize();
-          // Ensure rim normal faces out of the solid piece (away from facet centroid)
-          const midEdge = new THREE.Vector3().addVectors(pA, pB).multiplyScalar(0.5);
-          const awayFromFacet = new THREE.Vector3().subVectors(midEdge, facet.centroidOuter);
+          const rimNormal = new THREE.Vector3()
+            .crossVectors(edgeVec, wallVec)
+            .normalize();
+          const midEdge = new THREE.Vector3()
+            .addVectors(pA, pB)
+            .multiplyScalar(0.5);
+          const awayFromFacet = new THREE.Vector3().subVectors(
+            midEdge,
+            facet.centroidOuter,
+          );
           if (rimNormal.dot(awayFromFacet) < 0) {
             rimNormal.negate();
             pushTri(target, pA, iA, iB, rimNormal, rimColor);
@@ -434,7 +454,10 @@ export function createFacetedEggGeometries(): EggShellGeometries {
 
   const finalizeMesh = (b: MeshBuilder): THREE.BufferGeometry => {
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
+    geom.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(b.positions, 3),
+    );
     geom.setAttribute('normal', new THREE.Float32BufferAttribute(b.normals, 3));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 3));
     geom.computeBoundingBox();
@@ -444,7 +467,10 @@ export function createFacetedEggGeometries(): EggShellGeometries {
 
   const finalizeEdges = (b: MeshBuilder): THREE.BufferGeometry => {
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(b.edgePositions, 3));
+    geom.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(b.edgePositions, 3),
+    );
     geom.computeBoundingSphere();
     return geom;
   };

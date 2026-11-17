@@ -5,9 +5,57 @@ import * as THREE from 'three';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {motion, AnimatePresence} from 'motion/react';
 import {RotateCcw} from 'lucide-react';
-import {createFacetedEggGeometries} from '@/lib/egg-geometry';
+import {createFacetedWishGeometries} from '@/lib/wish-geometry';
 
-type EggPhase = 'intact' | 'cracked' | 'closing';
+type WishPhase = 'intact' | 'opened' | 'closing';
+
+const CAMERA_FOV_DEG = 40;
+const TAN_HALF_V = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
+const SIN_HALF_V = Math.sin(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
+const SCULPTURE_SCALE = 0.82;
+
+interface ViewportFraming {
+  defaultDistance: number;
+  minDistanceIntact: number;
+  minDistanceOpened: number;
+  maxDistance: number;
+}
+
+function computeViewportFraming(width: number, height: number): ViewportFraming {
+  const aspect = Math.max(0.35, width / Math.max(1, height));
+  const tanHalfH = aspect * TAN_HALF_V;
+  const sinHalfH = tanHalfH / Math.sqrt(1 + tanHalfH * tanHalfH);
+
+  // Full animated bounding radii (scaled by SCULPTURE_SCALE, accounting for split separation, tilt, float, and drag)
+  const openRadiusV = 1.85;
+  const openRadiusH = 1.62;
+  const intactRadiusV = 1.12;
+  const intactRadiusH = 0.94;
+
+  const defaultDistance = Math.max(
+    openRadiusV / (0.78 * SIN_HALF_V),
+    openRadiusH / (0.8 * sinHalfH),
+  );
+
+  const minDistanceIntact = Math.max(
+    intactRadiusV / (0.86 * SIN_HALF_V),
+    intactRadiusH / (0.86 * sinHalfH),
+  );
+
+  const minDistanceOpened = Math.max(
+    openRadiusV / (0.88 * SIN_HALF_V),
+    openRadiusH / (0.88 * sinHalfH),
+  );
+
+  const maxDistance = defaultDistance * 1.48;
+
+  return {
+    defaultDistance,
+    minDistanceIntact,
+    minDistanceOpened,
+    maxDistance,
+  };
+}
 
 function createContactShadowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -26,13 +74,6 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
-}
-
-function computeDefaultDistance(width: number, height: number): number {
-  const aspect = width / Math.max(1, height);
-  if (aspect >= 1.1) return 5.0;
-  // Pull camera slightly further back on narrow portrait screens so the egg fits comfortably
-  return THREE.MathUtils.clamp(5.0 / Math.max(0.68, aspect * 1.12), 5.0, 7.1);
 }
 
 let cachedGlCapability: {supported: boolean; isSoftwareGl: boolean} | null = null;
@@ -68,12 +109,12 @@ const subscribeNoop = () => () => {};
 const getWebglUnavailableSnapshot = () => !getWebGLCapability().supported;
 const getWebglUnavailableServerSnapshot = () => false;
 
-export default function FacetedEggExperience() {
+export default function ChristmasWishExperience() {
   const mountRef = useRef<HTMLDivElement | null>(null);
 
-  const [eggPhase, setEggPhase] = useState<EggPhase>('intact');
+  const [wishPhase, setWishPhase] = useState<WishPhase>('intact');
   const [isZoomedIn, setIsZoomedIn] = useState(false);
-  const [isHoveringEgg, setIsHoveringEgg] = useState(false);
+  const [isHoveringSurprise, setIsHoveringSurprise] = useState(false);
   const [isDraggingUI, setIsDraggingUI] = useState(false);
   const webglUnavailable = React.useSyncExternalStore(
     subscribeNoop,
@@ -81,7 +122,7 @@ export default function FacetedEggExperience() {
     getWebglUnavailableServerSnapshot,
   );
 
-  const phaseRef = useRef<EggPhase>('intact');
+  const phaseRef = useRef<WishPhase>('intact');
   const zoomedInRef = useRef(false);
   const closeHandlerRef = useRef<(() => void) | null>(null);
 
@@ -101,13 +142,16 @@ export default function FacetedEggExperience() {
 
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-    let defaultDistance = computeDefaultDistance(width, height);
-    let minDistance = defaultDistance * 0.54;
-    let maxDistance = defaultDistance * 1.68;
-    let targetDistance = defaultDistance;
-    let currentDistance = defaultDistance;
-    camera.position.set(0, 0.12, currentDistance);
+    const camera = new THREE.PerspectiveCamera(
+      CAMERA_FOV_DEG,
+      width / Math.max(1, height),
+      0.1,
+      100,
+    );
+    let framing = computeViewportFraming(width, height);
+    let targetDistance = framing.defaultDistance;
+    let currentDistance = framing.defaultDistance;
+    camera.position.set(0, 0.08, currentDistance);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({
@@ -176,7 +220,7 @@ export default function FacetedEggExperience() {
     bounceLight.position.set(3.2, -3.8, 2.4);
     scene.add(bounceLight);
 
-    // Interior glow point light revealed when egg cracks
+    // Interior glow point light revealed when the Christmas surprise opens
     const interiorLight = new THREE.PointLight(0xffffff, 0, 7, 1.8);
     interiorLight.position.set(0, 0, 0);
     scene.add(interiorLight);
@@ -189,23 +233,25 @@ export default function FacetedEggExperience() {
       depthWrite: false,
       opacity: 0.52,
     });
-    const shadowGeo = new THREE.PlaneGeometry(3.4, 3.4);
+    const shadowGeo = new THREE.PlaneGeometry(2.9, 2.9);
     const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
     shadowPlane.rotation.x = -Math.PI / 2;
-    shadowPlane.position.y = -1.68;
+    shadowPlane.position.y = -1.38;
     scene.add(shadowPlane);
 
-    // Egg hierarchy
-    const eggRoot = new THREE.Group();
-    scene.add(eggRoot);
+    // Sculptural Christmas surprise hierarchy (scaled for balanced viewport breathing room)
+    const sculptureRoot = new THREE.Group();
+    sculptureRoot.scale.setScalar(SCULPTURE_SCALE);
+    sculptureRoot.position.y = -0.03;
+    scene.add(sculptureRoot);
 
     const upperPivot = new THREE.Group();
     const lowerPivot = new THREE.Group();
-    eggRoot.add(upperPivot);
-    eggRoot.add(lowerPivot);
+    sculptureRoot.add(upperPivot);
+    sculptureRoot.add(lowerPivot);
 
     const {upperGeometry, lowerGeometry, upperEdgeGeometry, lowerEdgeGeometry} =
-      createFacetedEggGeometries();
+      createFacetedWishGeometries();
 
     const shellMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
@@ -309,7 +355,7 @@ export default function FacetedEggExperience() {
     let velY = 0;
     let velX = 0;
 
-    let crackElapsed = 0;
+    let openElapsed = 0;
     let confettiActive = false;
 
     const activePointers = new Map<number, {x: number; y: number}>();
@@ -323,8 +369,13 @@ export default function FacetedEggExperience() {
     let prevPinchDist: number | null = null;
     let lastHoverCheck = 0;
 
+    const getActiveMinDistance = () =>
+      phaseRef.current === 'intact'
+        ? framing.minDistanceIntact
+        : framing.minDistanceOpened;
+
     const syncZoomStateFlag = () => {
-      const zoomed = targetDistance < defaultDistance - 0.16;
+      const zoomed = targetDistance < framing.defaultDistance - 0.16;
       if (zoomed !== zoomedInRef.current) {
         zoomedInRef.current = zoomed;
         setIsZoomedIn(zoomed);
@@ -339,17 +390,17 @@ export default function FacetedEggExperience() {
 
       for (let i = 0; i < totalConfetti; i++) {
         const idx = i * 3;
-        // Start clustered inside the egg core
-        cPos[idx] = (Math.random() - 0.5) * 0.22;
-        cPos[idx + 1] = (Math.random() - 0.5) * 0.28;
-        cPos[idx + 2] = (Math.random() - 0.5) * 0.22;
+        // Start clustered inside the core
+        cPos[idx] = (Math.random() - 0.5) * 0.2;
+        cPos[idx + 1] = (Math.random() - 0.5) * 0.24;
+        cPos[idx + 2] = (Math.random() - 0.5) * 0.2;
 
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        const speed = 2.6 + Math.random() * 4.2;
+        const speed = 2.4 + Math.random() * 3.8;
 
         cVel[idx] = Math.sin(phi) * Math.cos(theta) * speed;
-        cVel[idx + 1] = Math.cos(phi) * speed * 0.9 + 1.15;
+        cVel[idx + 1] = Math.cos(phi) * speed * 0.9 + 1.1;
         cVel[idx + 2] = Math.sin(phi) * Math.sin(theta) * speed;
 
         cRot[idx] = Math.random() * Math.PI * 2;
@@ -360,30 +411,36 @@ export default function FacetedEggExperience() {
         cRotVel[idx + 1] = (Math.random() - 0.5) * 9;
         cRotVel[idx + 2] = (Math.random() - 0.5) * 9;
 
-        cScale[i] = 0.65 + Math.random() * 0.95;
+        cScale[i] = 0.6 + Math.random() * 0.9;
         cDrag[i] = 1.65 + Math.random() * 1.1;
         cPhase[i] = Math.random() * Math.PI * 2;
       }
     };
 
-    const triggerCrack = () => {
+    const triggerOpen = () => {
       if (phaseRef.current !== 'intact') return;
-      phaseRef.current = 'cracked';
-      crackElapsed = 0;
-      setEggPhase('cracked');
-      setIsHoveringEgg(false);
+      phaseRef.current = 'opened';
+      openElapsed = 0;
+      targetDistance = THREE.MathUtils.clamp(
+        targetDistance,
+        framing.minDistanceOpened,
+        framing.maxDistance,
+      );
+      syncZoomStateFlag();
+      setWishPhase('opened');
+      setIsHoveringSurprise(false);
       spawnCelebrationBurst();
     };
 
     const triggerClose = () => {
-      if (phaseRef.current !== 'cracked') return;
+      if (phaseRef.current !== 'opened') return;
       phaseRef.current = 'closing';
-      setEggPhase('closing');
-      setIsHoveringEgg(false);
+      setWishPhase('closing');
+      setIsHoveringSurprise(false);
     };
     closeHandlerRef.current = triggerClose;
 
-    const handleEggTap = (clientX: number, clientY: number) => {
+    const handleSurpriseTap = (clientX: number, clientY: number) => {
       const rect = renderer.domElement.getBoundingClientRect();
       _pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       _pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
@@ -392,15 +449,15 @@ export default function FacetedEggExperience() {
 
       if (hits.length === 0) return;
 
-      if (targetDistance < defaultDistance - 0.16) {
+      if (targetDistance < framing.defaultDistance - 0.16) {
         // Already zoomed in -> smoothly reset zoom back to default
-        targetDistance = defaultDistance;
+        targetDistance = framing.defaultDistance;
         syncZoomStateFlag();
         return;
       }
 
       if (phaseRef.current === 'intact') {
-        triggerCrack();
+        triggerOpen();
       }
     };
 
@@ -409,8 +466,8 @@ export default function FacetedEggExperience() {
       const delta = e.deltaY * 0.0038;
       targetDistance = THREE.MathUtils.clamp(
         targetDistance + delta,
-        minDistance,
-        maxDistance,
+        getActiveMinDistance(),
+        framing.maxDistance,
       );
       syncZoomStateFlag();
     };
@@ -459,8 +516,8 @@ export default function FacetedEggExperience() {
           const diff = prevPinchDist - pinchDist;
           targetDistance = THREE.MathUtils.clamp(
             targetDistance + diff * 0.015,
-            minDistance,
-            maxDistance,
+            getActiveMinDistance(),
+            framing.maxDistance,
           );
           syncZoomStateFlag();
         }
@@ -497,7 +554,7 @@ export default function FacetedEggExperience() {
           _pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
           _raycaster.setFromCamera(_pointerNdc, camera);
           const hits = _raycaster.intersectObjects(interactiveMeshes, false);
-          setIsHoveringEgg(hits.length > 0);
+          setIsHoveringSurprise(hits.length > 0);
         }
       }
     };
@@ -509,13 +566,15 @@ export default function FacetedEggExperience() {
       activePointers.delete(e.pointerId);
 
       if (e.pointerId === dragPointerId) {
-        const wasTap = totalDragDist < 7 && Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY) < 7;
+        const wasTap =
+          totalDragDist < 7 &&
+          Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY) < 7;
         isDragging = false;
         setIsDraggingUI(false);
         dragPointerId = null;
 
         if (wasTap) {
-          handleEggTap(e.clientX, e.clientY);
+          handleSurpriseTap(e.clientX, e.clientY);
         }
       }
 
@@ -541,19 +600,21 @@ export default function FacetedEggExperience() {
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerCancel);
 
-    const onResize = () => {
+    const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth || window.innerWidth;
       const h = container.clientHeight || window.innerHeight;
-      const prevDefault = defaultDistance;
-      defaultDistance = computeDefaultDistance(w, h);
-      minDistance = defaultDistance * 0.54;
-      maxDistance = defaultDistance * 1.68;
+      const prevDefault = framing.defaultDistance;
+      framing = computeViewportFraming(w, h);
 
       if (Math.abs(targetDistance - prevDefault) < 0.25) {
-        targetDistance = defaultDistance;
+        targetDistance = framing.defaultDistance;
       } else {
-        targetDistance = THREE.MathUtils.clamp(targetDistance, minDistance, maxDistance);
+        targetDistance = THREE.MathUtils.clamp(
+          targetDistance,
+          getActiveMinDistance(),
+          framing.maxDistance,
+        );
       }
       syncZoomStateFlag();
 
@@ -562,7 +623,13 @@ export default function FacetedEggExperience() {
       renderer.setSize(w, h);
       renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     };
-    window.addEventListener('resize', onResize);
+
+    window.addEventListener('resize', handleResize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(handleResize)
+        : null;
+    resizeObserver?.observe(container);
 
     // Pre-compile shaders on hardware GPUs
     if (!isSoftwareGl) {
@@ -607,7 +674,7 @@ export default function FacetedEggExperience() {
       // Smooth zoom damping
       currentDistance = THREE.MathUtils.damp(currentDistance, targetDistance, 8.5, dt);
       camera.position.z = currentDistance;
-      camera.position.y = 0.1;
+      camera.position.y = 0.08;
       camera.lookAt(0, 0, 0);
 
       // Rotational physics & idle circular motion
@@ -618,7 +685,6 @@ export default function FacetedEggExperience() {
         velX = THREE.MathUtils.damp(velX, 0, 4.5, dt);
 
         if (!prefersReducedMotion) {
-          // Subtle, slow circular idle rotation
           const idleSpeed = phaseRef.current === 'intact' ? 0.26 : 0.14;
           rotY += idleSpeed * dt;
           const targetIdleX = 0.06 + Math.sin(elapsedTotal * 0.68) * 0.075;
@@ -630,38 +696,38 @@ export default function FacetedEggExperience() {
         }
       }
 
-      eggRoot.rotation.y = rotY;
-      eggRoot.rotation.x = rotX;
-      eggRoot.rotation.z = rotZ;
+      sculptureRoot.rotation.y = rotY;
+      sculptureRoot.rotation.x = rotX;
+      sculptureRoot.rotation.z = rotZ;
 
-      // Subtle buoyant hover when intact or cracked
-      const idleFloat = prefersReducedMotion ? 0 : Math.sin(elapsedTotal * 1.25) * 0.04;
-      eggRoot.position.y = idleFloat;
+      // Subtle buoyant hover while remaining centered inside the viewport
+      const idleFloat = prefersReducedMotion ? 0 : Math.sin(elapsedTotal * 1.25) * 0.032;
+      sculptureRoot.position.y = -0.03 + idleFloat;
 
-      // Egg breaking animation choreography
-      if (phaseRef.current === 'cracked') {
-        crackElapsed += dt;
+      // Opening animation choreography
+      if (phaseRef.current === 'opened') {
+        openElapsed += dt;
 
-        // Anticipation micro-pulse (0..0.1s) then crisp parting
-        const splitActive = crackElapsed > 0.08;
-        const floatA = prefersReducedMotion ? 0 : Math.sin(crackElapsed * 1.45) * 0.04;
-        const floatB = prefersReducedMotion ? 0 : Math.cos(crackElapsed * 1.35) * 0.035;
+        // Anticipation micro-pulse (0..0.08s) then crisp parting within safe viewport bounds
+        const splitActive = openElapsed > 0.08;
+        const floatA = prefersReducedMotion ? 0 : Math.sin(openElapsed * 1.45) * 0.035;
+        const floatB = prefersReducedMotion ? 0 : Math.cos(openElapsed * 1.35) * 0.03;
 
-        const targetUpperPosX = splitActive ? -0.34 : 0;
-        const targetUpperPosY = splitActive ? 0.96 + floatA : 0;
-        const targetUpperPosZ = splitActive ? -0.18 : 0;
+        const targetUpperPosX = splitActive ? -0.28 : 0;
+        const targetUpperPosY = splitActive ? 0.8 + floatA : 0;
+        const targetUpperPosZ = splitActive ? -0.14 : 0;
 
-        const targetUpperRotX = splitActive ? -0.34 : 0;
+        const targetUpperRotX = splitActive ? -0.28 : 0;
         const targetUpperRotY = splitActive ? 0.18 : 0;
-        const targetUpperRotZ = splitActive ? 0.36 : 0;
+        const targetUpperRotZ = splitActive ? 0.32 : 0;
 
-        const targetLowerPosX = splitActive ? 0.28 : 0;
-        const targetLowerPosY = splitActive ? -0.86 + floatB : 0;
-        const targetLowerPosZ = splitActive ? 0.14 : 0;
+        const targetLowerPosX = splitActive ? 0.24 : 0;
+        const targetLowerPosY = splitActive ? -0.74 + floatB : 0;
+        const targetLowerPosZ = splitActive ? 0.12 : 0;
 
-        const targetLowerRotX = splitActive ? 0.26 : 0;
+        const targetLowerRotX = splitActive ? 0.24 : 0;
         const targetLowerRotY = splitActive ? -0.16 : 0;
-        const targetLowerRotZ = splitActive ? -0.3 : 0;
+        const targetLowerRotZ = splitActive ? -0.28 : 0;
 
         const lambda = 4.6;
         upperPivot.position.x = THREE.MathUtils.damp(upperPivot.position.x, targetUpperPosX, lambda, dt);
@@ -679,7 +745,7 @@ export default function FacetedEggExperience() {
         lowerPivot.rotation.z = THREE.MathUtils.damp(lowerPivot.rotation.z, targetLowerRotZ, lambda, dt);
 
         // Interior burst light pulse then gentle settle
-        const targetGlow = crackElapsed < 0.55 ? 4.8 : 1.4;
+        const targetGlow = openElapsed < 0.55 ? 4.8 : 1.4;
         interiorLight.intensity = THREE.MathUtils.damp(interiorLight.intensity, targetGlow, 5.5, dt);
 
         // Soften contact shadow as halves drift apart
@@ -690,8 +756,8 @@ export default function FacetedEggExperience() {
           const fadeStart = 3.8;
           const fadeDuration = 2.4;
           let globalFade = 1;
-          if (crackElapsed > fadeStart) {
-            globalFade = Math.max(0, 1 - (crackElapsed - fadeStart) / fadeDuration);
+          if (openElapsed > fadeStart) {
+            globalFade = Math.max(0, 1 - (openElapsed - fadeStart) / fadeDuration);
           }
           confettiMat.opacity = globalFade;
 
@@ -707,7 +773,6 @@ export default function FacetedEggExperience() {
               cVel[idx + 1] = cVel[idx + 1] * dampFactor - 0.52 * dt;
               cVel[idx + 2] *= dampFactor;
 
-              // Flutter
               const flutter = Math.sin(elapsedTotal * 3.8 + cPhase[i]) * 0.28 * dt;
               cPos[idx] += cVel[idx] * dt + flutter;
               cPos[idx + 1] += cVel[idx + 1] * dt;
@@ -719,7 +784,7 @@ export default function FacetedEggExperience() {
 
               _dummy.position.set(cPos[idx], cPos[idx + 1], cPos[idx + 2]);
               _dummy.rotation.set(cRot[idx], cRot[idx + 1], cRot[idx + 2]);
-              const s = cScale[i] * Math.min(1, crackElapsed * 5);
+              const s = cScale[i] * Math.min(1, openElapsed * 5);
               _dummy.scale.setScalar(s);
               _dummy.updateMatrix();
 
@@ -752,7 +817,6 @@ export default function FacetedEggExperience() {
         interiorLight.intensity = THREE.MathUtils.damp(interiorLight.intensity, 0, 8.0, dt);
         shadowMat.opacity = THREE.MathUtils.damp(shadowMat.opacity, 0.52, 5.0, dt);
 
-        // Smoothly fade out any active confetti
         if (confettiActive) {
           confettiMat.opacity = THREE.MathUtils.damp(confettiMat.opacity, 0, 9.0, dt);
           for (let i = 0; i < totalConfetti; i++) {
@@ -799,9 +863,9 @@ export default function FacetedEggExperience() {
           ribbonMesh.visible = false;
           shardMesh.visible = false;
           confettiMat.opacity = 1;
-          crackElapsed = 0;
+          openElapsed = 0;
           phaseRef.current = 'intact';
-          setEggPhase('intact');
+          setWishPhase('intact');
         }
       }
 
@@ -826,12 +890,13 @@ export default function FacetedEggExperience() {
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
 
+      resizeObserver?.disconnect();
       canvasEl.removeEventListener('wheel', onWheel);
       canvasEl.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerCancel);
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener('resize', handleResize);
       canvasEl.removeEventListener('webglcontextlost', onContextLost);
       canvasEl.removeEventListener('webglcontextrestored', onContextRestored);
 
@@ -859,19 +924,19 @@ export default function FacetedEggExperience() {
 
   const cursorClass = isDraggingUI
     ? 'cursor-grabbing'
-    : isHoveringEgg
+    : isHoveringSurprise
       ? 'cursor-pointer'
       : 'cursor-grab';
 
   return (
     <main
-      className={`relative w-screen h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#1b1b1f_0%,#0e0e11_48%,#070709_100%)] ${cursorClass}`}
+      className={`relative w-full h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#1b1b1f_0%,#0e0e11_48%,#070709_100%)] ${cursorClass}`}
     >
       {/* Isolated WebGL mount container */}
       <div
         ref={mountRef}
         className="absolute inset-0 w-full h-full"
-        aria-label="Interactive monochromatic 3D polygon-faceted egg"
+        aria-label="Interactive monochromatic 3D faceted Christmas surprise"
         role="img"
       />
 
@@ -887,10 +952,10 @@ export default function FacetedEggExperience() {
         </div>
       )}
 
-      {/* Monochromatic holiday greeting card & icon-only Close egg button */}
+      {/* Monochromatic Christmas greeting card & icon-only close control */}
       <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-6">
         <AnimatePresence>
-          {eggPhase === 'cracked' && (
+          {wishPhase === 'opened' && (
             <motion.div
               initial={{opacity: 0, scale: 0.9, y: 14}}
               animate={{opacity: 1, scale: 1, y: 0}}
@@ -939,19 +1004,19 @@ export default function FacetedEggExperience() {
                 <div className="relative inline-flex items-center justify-center">
                   <button
                     type="button"
-                    aria-label="Close egg"
-                    aria-describedby="close-egg-tooltip"
+                    aria-label="Close Christmas surprise"
+                    aria-describedby="close-surprise-tooltip"
                     onClick={() => closeHandlerRef.current?.()}
                     className="peer inline-flex items-center justify-center w-11 h-11 rounded-full bg-zinc-950/80 hover:bg-zinc-800/90 border border-zinc-600/50 hover:border-zinc-300/80 text-zinc-300 hover:text-white shadow-[0_4px_18px_rgba(0,0,0,0.65)] transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
                   >
                     <RotateCcw size={16} strokeWidth={1.65} aria-hidden="true" />
                   </button>
                   <span
-                    id="close-egg-tooltip"
+                    id="close-surprise-tooltip"
                     role="tooltip"
                     className="pointer-events-none absolute top-full mt-2.5 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-zinc-950/95 border border-zinc-700/70 font-sans text-[11px] font-normal tracking-[0.04em] text-zinc-200 whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
                   >
-                    Close egg
+                    Close surprise
                   </span>
                 </div>
               </motion.div>
@@ -960,9 +1025,9 @@ export default function FacetedEggExperience() {
         </AnimatePresence>
       </div>
 
-      {/* Subtle single-line interaction cue that fades out once cracked */}
+      {/* Subtle single-line interaction cue that fades out once opened */}
       <AnimatePresence>
-        {eggPhase === 'intact' && !webglUnavailable && (
+        {wishPhase === 'intact' && !webglUnavailable && (
           <motion.p
             initial={{opacity: 0}}
             animate={{opacity: 0.68}}
@@ -971,7 +1036,7 @@ export default function FacetedEggExperience() {
             className="pointer-events-none fixed bottom-6 inset-x-0 z-20 flex items-center justify-center text-center font-sans font-normal text-xs tracking-[0.05em] text-zinc-400 px-4"
           >
             {isZoomedIn ? (
-              'Click egg to reset zoom'
+              'Click to reset zoom'
             ) : (
               <>
                 <span>Drag to rotate</span>
@@ -982,7 +1047,7 @@ export default function FacetedEggExperience() {
                 <span aria-hidden="true" className="mx-2.5 text-zinc-600">
                   |
                 </span>
-                <span>Click to crack</span>
+                <span>Click to open</span>
               </>
             )}
           </motion.p>
