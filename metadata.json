@@ -1,0 +1,6 @@
+{
+  "name": "Faceted Holiday Egg",
+  "description": "An interactive monochromatic 3D polygon-faceted egg that cracks open to reveal a festive celebration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
