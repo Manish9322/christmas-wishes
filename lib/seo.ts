@@ -55,7 +55,6 @@ export interface PageSeoConfig {
   path: '/' | '/orb';
   title: string;
   socialTitle: string;
-  description: string;
   imagePath: '/og-image.png' | '/og-orb.png';
   imageAlt: string;
 }
@@ -64,22 +63,16 @@ export const HOME_SEO: PageSeoConfig = {
   path: '/',
   title: 'Merry Christmas! | A Little Christmas Wish',
   socialTitle: 'Merry Christmas! | A Little Christmas Wish',
-  description:
-    'Open this interactive 3D monochrome Christmas wish to share warmth, quiet wonder, and festive joy with the people who matter.',
   imagePath: '/og-image.png',
-  imageAlt:
-    'A Little Christmas Wish — Merry Christmas! monochrome 3D faceted holiday sculpture preview card',
+  imageAlt: 'Merry Christmas! monochrome 3D faceted Christmas sculpture',
 };
 
 export const ORB_SEO: PageSeoConfig = {
   path: '/orb',
   title: 'Christmas Ornament | A Little Christmas Wish',
-  socialTitle: 'Christmas Ornament | A Little Christmas Wish',
-  description:
-    'Rotate and open this interactive 3D monochrome Christmas ornament to reveal a quiet holiday greeting crafted to share online.',
+  socialTitle: 'Merry Christmas! | A Little Christmas Wish',
   imagePath: '/og-orb.png',
-  imageAlt:
-    'A Little Christmas Wish — Merry Christmas! monochrome spiral 3D Christmas ornament preview card',
+  imageAlt: 'Merry Christmas! monochrome 3D spiral Christmas ornament',
 };
 
 export async function buildPageMetadata(
@@ -92,7 +85,6 @@ export async function buildPageMetadata(
   return {
     metadataBase: new URL(siteUrl),
     title: config.title,
-    description: config.description,
     applicationName: SITE_NAME,
     alternates: {
       canonical: pageUrl,
@@ -103,7 +95,6 @@ export async function buildPageMetadata(
     },
     openGraph: {
       title: config.socialTitle,
-      description: config.description,
       url: pageUrl,
       siteName: SITE_NAME,
       type: 'website',
@@ -122,7 +113,6 @@ export async function buildPageMetadata(
     twitter: {
       card: 'summary_large_image',
       title: config.socialTitle,
-      description: config.description,
       images: [
         {
           url: imageUrl,

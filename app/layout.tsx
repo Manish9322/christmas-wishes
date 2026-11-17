@@ -39,7 +39,6 @@ const structuredData = {
   name: SITE_NAME,
   applicationCategory: 'LifestyleApplication',
   operatingSystem: 'All',
-  description: HOME_SEO.description,
   offers: {
     '@type': 'Offer',
     price: '0',
