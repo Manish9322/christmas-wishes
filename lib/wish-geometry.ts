@@ -1,10 +1,22 @@
 import * as THREE from 'three';
 
+export interface QrTileGeometryData {
+  outerGeo: THREE.BufferGeometry;
+  innerGeo: THREE.BufferGeometry;
+  rimGeo: THREE.BufferGeometry;
+  outerEdgeGeo: THREE.BufferGeometry;
+  anchorPosition: THREE.Vector3;
+  anchorQuaternion: THREE.Quaternion;
+  maxRadius: number;
+  qrSquareHalf: number;
+}
+
 export interface WishShellGeometries {
   upperGeometry: THREE.BufferGeometry;
   lowerGeometry: THREE.BufferGeometry;
   upperEdgeGeometry: THREE.BufferGeometry;
   lowerEdgeGeometry: THREE.BufferGeometry;
+  qrTile: QrTileGeometryData;
 }
 
 interface HullFace {
@@ -59,7 +71,6 @@ function makeFace(
 function computeSphericalConvexHull(points: THREE.Vector3[]): HullFace[] {
   const n = points.length;
 
-  // Pick initial 4 non-coplanar vertices with large volume
   const i0 = 0;
   let i1 = 1;
   let maxDistSq = -1;
@@ -131,7 +142,6 @@ function computeSphericalConvexHull(points: THREE.Vector3[]): HullFace[] {
 
     if (visible.length === 0) continue;
 
-    // Collect directed edges of visible faces; boundary edges lack their twin in visible set
     const visibleEdges = new Set<string>();
     const edgeList: Array<[number, number]> = [];
     for (let f = 0; f < visible.length; f++) {
@@ -156,6 +166,34 @@ function computeSphericalConvexHull(points: THREE.Vector3[]): HullFace[] {
   }
 
   return faces;
+}
+
+function computePolygonMaxCenteredSquare(
+  pts2D: Array<{u: number; v: number}>,
+): number {
+  let minHalf = Infinity;
+  const n = pts2D.length;
+  for (let k = 0; k < n; k++) {
+    const a = pts2D[k];
+    const b = pts2D[(k + 1) % n];
+    const dx = b.u - a.u;
+    const dy = b.v - a.v;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) continue;
+    let ox = dy / len;
+    let oy = -dx / len;
+    let dist = a.u * ox + a.v * oy;
+    if (dist < 0) {
+      ox = -ox;
+      oy = -oy;
+      dist = -dist;
+    }
+    const denom = Math.abs(ox) + Math.abs(oy);
+    if (denom > 1e-6) {
+      minHalf = Math.min(minHalf, dist / denom);
+    }
+  }
+  return Number.isFinite(minHalf) ? minHalf : 0.08;
 }
 
 const MONOCHROME_PALETTE = [
@@ -187,7 +225,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     const theta = goldenAngle * i;
     const p = new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r);
 
-    // Tangential asymmetric jitter for irregular polygonal facets
     const ref = Math.abs(p.y) > 0.9 ? altRef : upRef;
     const t1 = new THREE.Vector3().crossVectors(ref, p).normalize();
     const t2 = new THREE.Vector3().crossVectors(p, t1).normalize();
@@ -200,7 +237,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
 
   const hullFaces = computeSphericalConvexHull(seeds);
 
-  // Dual vertices on unit sphere & mapped onto outer sculptural shell surface
   const dualUnit: THREE.Vector3[] = [];
   const dualOuter: THREE.Vector3[] = [];
   const dualInner: THREE.Vector3[] = [];
@@ -244,7 +280,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     }
   }
 
-  // Group hull faces around each seed vertex to form Voronoi polygons
   const seedFaces: number[][] = Array.from({length: seedCount}, () => []);
   for (let f = 0; f < hullFaces.length; f++) {
     const face = hullFaces[f];
@@ -298,7 +333,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     centroidOuter.divideScalar(ordered.length);
     centroidInner.divideScalar(ordered.length);
 
-    // Compute average outward polygon normal
     const normal = new THREE.Vector3();
     const v1 = new THREE.Vector3();
     const v2 = new THREE.Vector3();
@@ -316,7 +350,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     }
     if (normal.dot(p) < 0) normal.negate();
 
-    // Curated tonal distribution: gentle architectural contrast across monochrome shades
     const heightBias = (p.y + 1) * 0.5;
     const rawTone = rand() * 0.78 + heightBias * 0.22;
     const paletteIdx = Math.min(
@@ -343,11 +376,84 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     });
   }
 
-  // Build non-indexed BufferGeometries for crisp flat-shaded polygon facets
+  const dualEdgeToFacets = new Map<string, number[]>();
+  for (let fi = 0; fi < facets.length; fi++) {
+    const d = facets[fi].dualIndices;
+    for (let k = 0; k < d.length; k++) {
+      const a = d[k];
+      const b = d[(k + 1) % d.length];
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      const list = dualEdgeToFacets.get(key);
+      if (list) list.push(fi);
+      else dualEdgeToFacets.set(key, [fi]);
+    }
+  }
+
+  const isSeamFacet = new Array<boolean>(facets.length).fill(false);
+  for (let fi = 0; fi < facets.length; fi++) {
+    const facet = facets[fi];
+    const d = facet.dualIndices;
+    for (let k = 0; k < d.length; k++) {
+      const a = d[k];
+      const b = d[(k + 1) % d.length];
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      const sharing = dualEdgeToFacets.get(key);
+      if (sharing && sharing.length === 2) {
+        const other = facets[sharing[0] === fi ? sharing[1] : sharing[0]];
+        if (other.isUpper !== facet.isUpper) {
+          isSeamFacet[fi] = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // Pick the widest, most evenly proportioned lower-half inside-facing tile (7-sided heptagon on the
+  // upper-left rear wall) so there is generous dark tile margin on all sides around the QR code.
+  let qrFacetIdx = -1;
+  let bestQrScore = -Infinity;
+  const tmpV = new THREE.Vector3();
+  const tmpU = new THREE.Vector3();
+  const tmpDelta = new THREE.Vector3();
+
+  for (let fi = 0; fi < facets.length; fi++) {
+    const facet = facets[fi];
+    if (facet.isUpper) continue;
+    const cx = facet.centroidInner.x;
+    const cy = facet.centroidInner.y;
+    const cz = facet.centroidInner.z;
+    if (cy > 0.05 || cy < -0.2 || cx > -0.35 || cz > -0.45) continue;
+
+    const inwardN = facet.normal.clone().negate();
+    tmpV.copy(upRef).addScaledVector(inwardN, -upRef.dot(inwardN));
+    if (tmpV.lengthSq() < 1e-6) continue;
+    tmpV.normalize();
+    tmpU.crossVectors(tmpV, inwardN).normalize();
+
+    const pts2D = facet.dualIndices.map((fIdx) => {
+      tmpDelta.subVectors(dualInner[fIdx], facet.centroidInner);
+      return {u: tmpDelta.dot(tmpU), v: tmpDelta.dot(tmpV)};
+    });
+    const halfSq = computePolygonMaxCenteredSquare(pts2D);
+
+    const horizLen = Math.max(0.2, Math.hypot(cx, cz));
+    const rearVisibility = Math.max(0, -cz / horizLen);
+    const score = halfSq + rearVisibility * 0.08;
+    if (score > bestQrScore) {
+      bestQrScore = score;
+      qrFacetIdx = fi;
+    }
+  }
+
+  if (qrFacetIdx === -1) {
+    qrFacetIdx = facets.findIndex((f) => !f.isUpper);
+  }
+
   interface MeshBuilder {
     positions: number[];
     normals: number[];
     colors: number[];
+    uvs: number[];
     edgePositions: number[];
     seenEdges: Set<string>;
   }
@@ -356,14 +462,19 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     positions: [],
     normals: [],
     colors: [],
+    uvs: [],
     edgePositions: [],
     seenEdges: new Set<string>(),
   });
 
   const upper = createBuilder();
   const lower = createBuilder();
+  const qrOuterBuilder = createBuilder();
+  const qrInnerBuilder = createBuilder();
+  const qrRimBuilder = createBuilder();
+
   const innerColor = new THREE.Color(0x111113);
-  const rimColor = new THREE.Color(0x8a8a93);
+  const rimColor = new THREE.Color(0x9a9aa4);
 
   const pushTri = (
     b: MeshBuilder,
@@ -378,21 +489,8 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     b.colors.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
   };
 
-  // Map dual edge (fA, fB) -> facets sharing it so we can detect parting seam edges
-  const dualEdgeToFacets = new Map<string, number[]>();
   for (let fi = 0; fi < facets.length; fi++) {
-    const d = facets[fi].dualIndices;
-    for (let k = 0; k < d.length; k++) {
-      const a = d[k];
-      const b = d[(k + 1) % d.length];
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      const list = dualEdgeToFacets.get(key);
-      if (list) list.push(fi);
-      else dualEdgeToFacets.set(key, [fi]);
-    }
-  }
-
-  for (let fi = 0; fi < facets.length; fi++) {
+    if (fi === qrFacetIdx) continue;
     const facet = facets[fi];
     const target = facet.isUpper ? upper : lower;
     const d = facet.dualIndices;
@@ -406,13 +504,9 @@ export function createFacetedWishGeometries(): WishShellGeometries {
       const iA = dualInner[fA];
       const iB = dualInner[fB];
 
-      // Outer polygon facet triangle (shared flat normal & uniform shade across polygon)
       pushTri(target, facet.centroidOuter, pA, pB, facet.normal, facet.color);
-
-      // Inner dark cavity triangle (reversed winding)
       pushTri(target, facet.centroidInner, iB, iA, inwardNormal, innerColor);
 
-      // Polygon perimeter hairline edge (nudged radially outward by 0.0025 to avoid z-fighting)
       const edgeKey = fA < fB ? `${fA}_${fB}` : `${fB}_${fA}`;
       if (!target.seenEdges.has(edgeKey)) {
         target.seenEdges.add(edgeKey);
@@ -421,12 +515,10 @@ export function createFacetedWishGeometries(): WishShellGeometries {
         target.edgePositions.push(eA.x, eA.y, eA.z, eB.x, eB.y, eB.z);
       }
 
-      // Check if this edge lies on the parting seam between Upper and Lower halves
       const sharing = dualEdgeToFacets.get(edgeKey);
       if (sharing && sharing.length === 2) {
         const other = facets[sharing[0] === fi ? sharing[1] : sharing[0]];
         if (other.isUpper !== facet.isUpper) {
-          // Emit wall bevel quad along the seam edge so the shell has solid thickness
           const edgeVec = new THREE.Vector3().subVectors(pB, pA);
           const wallVec = new THREE.Vector3().subVectors(iA, pA);
           const rimNormal = new THREE.Vector3()
@@ -452,7 +544,193 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     }
   }
 
-  const finalizeMesh = (b: MeshBuilder): THREE.BufferGeometry => {
+  // Build isolated 3D geometry for the designated QR tile in its INSIDE-FACING local (U, V, +N_inward) frame
+  const qrFacet = facets[qrFacetIdx];
+  const qrInwardNormal = qrFacet.normal.clone().negate().normalize();
+  const qrTangentV = upRef
+    .clone()
+    .addScaledVector(qrInwardNormal, -upRef.dot(qrInwardNormal))
+    .normalize();
+  const qrTangentU = new THREE.Vector3()
+    .crossVectors(qrTangentV, qrInwardNormal)
+    .normalize();
+
+  const anchorBasis = new THREE.Matrix4().makeBasis(
+    qrTangentU,
+    qrTangentV,
+    qrInwardNormal,
+  );
+  const anchorQuaternion = new THREE.Quaternion().setFromRotationMatrix(
+    anchorBasis,
+  );
+  const invAnchorQuat = anchorQuaternion.clone().invert();
+  const anchorPosition = qrFacet.centroidInner.clone();
+
+  const toTileLocal = (worldPt: THREE.Vector3): THREE.Vector3 =>
+    worldPt.clone().sub(anchorPosition).applyQuaternion(invAnchorQuat);
+
+  const dIndices = qrFacet.dualIndices;
+  const localInnerPts = dIndices.map((fIdx) => toTileLocal(dualInner[fIdx]));
+  const localOuterPts = dIndices.map((fIdx) => toTileLocal(dualOuter[fIdx]));
+  const localCenterInner = new THREE.Vector3(0, 0, 0);
+  const localCenterOuter = toTileLocal(qrFacet.centroidOuter);
+
+  const rawMaxHalfSquare = computePolygonMaxCenteredSquare(
+    localInnerPts.map((pt) => ({u: pt.x, v: pt.y})),
+  );
+  const qrSquareHalf = rawMaxHalfSquare * 0.7;
+  let maxRadius = 0;
+  for (const pt of localOuterPts) {
+    maxRadius = Math.max(maxRadius, Math.hypot(pt.x, pt.y));
+  }
+
+  // In tile-local space: +Z faces INSIDE the bowl (and straight at the camera when selected), -Z faces OUTSIDE shell
+  const localInwardFaceNormal = new THREE.Vector3(0, 0, 1);
+  const localOuterFaceNormal = new THREE.Vector3(0, 0, -1);
+
+  const pushQrInnerTri = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+  ) => {
+    const abX = b.x - a.x;
+    const abY = b.y - a.y;
+    const acX = c.x - a.x;
+    const acY = c.y - a.y;
+    const crossZ = abX * acY - abY * acX;
+    const p1 = a;
+    const p2 = crossZ >= 0 ? b : c;
+    const p3 = crossZ >= 0 ? c : b;
+
+    pushTri(
+      qrInnerBuilder,
+      p1,
+      p2,
+      p3,
+      localInwardFaceNormal,
+      innerColor,
+    );
+    const invSpan = 1 / (2 * qrSquareHalf);
+    qrInnerBuilder.uvs.push(
+      0.5 + p1.x * invSpan,
+      0.5 + p1.y * invSpan,
+      0.5 + p2.x * invSpan,
+      0.5 + p2.y * invSpan,
+      0.5 + p3.x * invSpan,
+      0.5 + p3.y * invSpan,
+    );
+  };
+
+  const pushQrOuterTri = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+  ) => {
+    const abX = b.x - a.x;
+    const abY = b.y - a.y;
+    const acX = c.x - a.x;
+    const acY = c.y - a.y;
+    const crossZ = abX * acY - abY * acX;
+    const p1 = a;
+    const p2 = crossZ <= 0 ? b : c;
+    const p3 = crossZ <= 0 ? c : b;
+
+    pushTri(
+      qrOuterBuilder,
+      p1,
+      p2,
+      p3,
+      localOuterFaceNormal,
+      qrFacet.color,
+    );
+  };
+
+  for (let k = 0; k < dIndices.length; k++) {
+    const nextK = (k + 1) % dIndices.length;
+    const fA = dIndices[k];
+    const fB = dIndices[nextK];
+    const iA = localInnerPts[k];
+    const iB = localInnerPts[nextK];
+    const oA = localOuterPts[k];
+    const oB = localOuterPts[nextK];
+
+    // 1. Tile inside-facing QR face (+Z in tile-local space, with QR UV alignment)
+    pushQrInnerTri(localCenterInner, iA, iB);
+
+    // 2. Tile outer shell face (-Z in tile-local space, matching surrounding monochrome facets)
+    pushQrOuterTri(localCenterOuter, oA, oB);
+
+    // 3. Tile solid beveled side walls connecting inner face to outer face
+    const edgeVec = new THREE.Vector3().subVectors(iB, iA);
+    const wallVec = new THREE.Vector3().subVectors(oA, iA);
+    const wallNormal = new THREE.Vector3()
+      .crossVectors(edgeVec, wallVec)
+      .normalize();
+    const midEdge = new THREE.Vector3().addVectors(iA, iB).multiplyScalar(0.5);
+    if (wallNormal.dot(midEdge) < 0) {
+      wallNormal.negate();
+      pushTri(qrRimBuilder, iA, oA, oB, wallNormal, rimColor);
+      pushTri(qrRimBuilder, iA, oB, iB, wallNormal, rimColor);
+    } else {
+      pushTri(qrRimBuilder, iA, iB, oB, wallNormal, rimColor);
+      pushTri(qrRimBuilder, iA, oB, oA, wallNormal, rimColor);
+    }
+
+    // 4. Perimeter hairline edges for the outer shell facet
+    const eOutA = oA.clone().addScaledVector(localOuterFaceNormal, 0.0025);
+    const eOutB = oB.clone().addScaledVector(localOuterFaceNormal, 0.0025);
+    qrOuterBuilder.edgePositions.push(
+      eOutA.x,
+      eOutA.y,
+      eOutA.z,
+      eOutB.x,
+      eOutB.y,
+      eOutB.z,
+    );
+
+    // 5. Sealed dark socket inside the shell thickness (strictly between dualInner and dualOuter -> zero z-fighting when docked, zero holes when lifted)
+    const wInnerA = dualInner[fA];
+    const wInnerB = dualInner[fB];
+    const wSockA = new THREE.Vector3().lerpVectors(dualOuter[fA], dualInner[fA], 0.04);
+    const wSockB = new THREE.Vector3().lerpVectors(dualOuter[fB], dualInner[fB], 0.04);
+    const sockCenter = new THREE.Vector3().lerpVectors(
+      qrFacet.centroidOuter,
+      qrFacet.centroidInner,
+      0.04,
+    );
+
+    // Outward-facing outer back cover of the socket (prevents seeing into socket from outside if shell rotates)
+    pushTri(lower, sockCenter, wSockA, wSockB, qrFacet.normal, innerColor);
+    // Inward-facing dark floor of the socket visible when the QR tile lifts inward out of the bowl
+    pushTri(lower, sockCenter, wSockB, wSockA, qrInwardNormal, innerColor);
+
+    // Socket side walls from inner rim down to socket floor
+    const sockEdge = new THREE.Vector3().subVectors(wInnerB, wInnerA);
+    const sockWall = new THREE.Vector3().subVectors(wSockA, wInnerA);
+    const sockNormal = new THREE.Vector3()
+      .crossVectors(sockEdge, sockWall)
+      .normalize();
+    const sockMid = new THREE.Vector3()
+      .addVectors(wInnerA, wInnerB)
+      .multiplyScalar(0.5);
+    const towardSocketCenter = new THREE.Vector3().subVectors(
+      qrFacet.centroidInner,
+      sockMid,
+    );
+    if (sockNormal.dot(towardSocketCenter) < 0) {
+      sockNormal.negate();
+      pushTri(lower, wInnerA, wSockA, wSockB, sockNormal, innerColor);
+      pushTri(lower, wInnerA, wSockB, wInnerB, sockNormal, innerColor);
+    } else {
+      pushTri(lower, wInnerA, wInnerB, wSockB, sockNormal, innerColor);
+      pushTri(lower, wInnerA, wSockB, wSockA, sockNormal, innerColor);
+    }
+  }
+
+  const finalizeMesh = (
+    b: MeshBuilder,
+    includeUv = false,
+  ): THREE.BufferGeometry => {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute(
       'position',
@@ -460,16 +738,19 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     );
     geom.setAttribute('normal', new THREE.Float32BufferAttribute(b.normals, 3));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 3));
+    if (includeUv && b.uvs.length > 0) {
+      geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
+    }
     geom.computeBoundingBox();
     geom.computeBoundingSphere();
     return geom;
   };
 
-  const finalizeEdges = (b: MeshBuilder): THREE.BufferGeometry => {
+  const finalizeEdges = (positions: number[]): THREE.BufferGeometry => {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute(
       'position',
-      new THREE.Float32BufferAttribute(b.edgePositions, 3),
+      new THREE.Float32BufferAttribute(positions, 3),
     );
     geom.computeBoundingSphere();
     return geom;
@@ -478,7 +759,17 @@ export function createFacetedWishGeometries(): WishShellGeometries {
   return {
     upperGeometry: finalizeMesh(upper),
     lowerGeometry: finalizeMesh(lower),
-    upperEdgeGeometry: finalizeEdges(upper),
-    lowerEdgeGeometry: finalizeEdges(lower),
+    upperEdgeGeometry: finalizeEdges(upper.edgePositions),
+    lowerEdgeGeometry: finalizeEdges(lower.edgePositions),
+    qrTile: {
+      outerGeo: finalizeMesh(qrOuterBuilder),
+      innerGeo: finalizeMesh(qrInnerBuilder, true),
+      rimGeo: finalizeMesh(qrRimBuilder),
+      outerEdgeGeo: finalizeEdges(qrOuterBuilder.edgePositions),
+      anchorPosition,
+      anchorQuaternion,
+      maxRadius,
+      qrSquareHalf,
+    },
   };
 }

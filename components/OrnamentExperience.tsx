@@ -31,7 +31,7 @@ function createContactShadowTexture(): THREE.CanvasTexture {
 const CAMERA_FOV_DEG = 40;
 const TAN_HALF_V = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
 const SIN_HALF_V = Math.sin(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
-const ORNAMENT_SCALE = 0.82;
+const ORNAMENT_SCALE = 0.88;
 
 interface ViewportFraming {
   defaultDistance: number;
@@ -46,14 +46,14 @@ function computeViewportFraming(width: number, height: number): ViewportFraming 
   const sinHalfH = tanHalfH / Math.sqrt(1 + tanHalfH * tanHalfH);
 
   // Full animated bounding radii (scaled by ORNAMENT_SCALE, accounting for split separation, cap/loop, tilt, float, and drag)
-  const openRadiusV = 1.82;
-  const openRadiusH = 1.62;
-  const intactRadiusV = 1.1;
-  const intactRadiusH = 0.92;
+  const openRadiusV = 1.86;
+  const openRadiusH = 1.68;
+  const intactRadiusV = 1.18;
+  const intactRadiusH = 0.99;
 
   const defaultDistance = Math.max(
-    openRadiusV / (0.78 * SIN_HALF_V),
-    openRadiusH / (0.8 * sinHalfH),
+    openRadiusV / (0.85 * SIN_HALF_V),
+    openRadiusH / (0.86 * sinHalfH),
   );
 
   const minDistanceIntact = Math.max(
@@ -236,7 +236,7 @@ export default function OrnamentExperience() {
     const shadowGeo = new THREE.PlaneGeometry(2.9, 2.9);
     const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
     shadowPlane.rotation.x = -Math.PI / 2;
-    shadowPlane.position.y = -1.28;
+    shadowPlane.position.y = -1.34;
     scene.add(shadowPlane);
 
     // Ornament hierarchy (scaled & optically centered including crown cap and hanging loop)

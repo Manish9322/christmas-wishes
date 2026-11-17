@@ -1,6 +1,7 @@
 import type {Metadata, Viewport} from 'next';
 import localFont from 'next/font/local';
 import {Raleway} from 'next/font/google';
+import {HOME_SEO, SITE_NAME, buildPageMetadata} from '@/lib/seo';
 import './globals.css';
 
 const magnoliaSky = localFont({
@@ -20,27 +21,9 @@ const raleway = Raleway({
   fallback: ['system-ui', '-apple-system', 'sans-serif'],
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: 'Merry Christmas | A Little Christmas Wish',
-    template: '%s | A Little Christmas Wish',
-  },
-  description:
-    'A little interactive Christmas greeting to share joy, warmth, peace, and happiness with the people who matter.',
-  openGraph: {
-    title: 'Merry Christmas!',
-    description:
-      'A little Christmas surprise, created to share warm wishes and festive happiness.',
-    siteName: 'A Little Christmas Wish',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Merry Christmas!',
-    description:
-      'A little Christmas surprise, created to share warm wishes and festive happiness.',
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return buildPageMetadata(HOME_SEO);
+}
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -48,6 +31,20 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: '#09090b',
+};
+
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: SITE_NAME,
+  applicationCategory: 'LifestyleApplication',
+  operatingSystem: 'All',
+  description: HOME_SEO.description,
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
@@ -60,6 +57,10 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         className="bg-[#09090b] text-zinc-100 antialiased overflow-hidden select-none font-sans"
         suppressHydrationWarning
       >
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{__html: JSON.stringify(structuredData)}}
+        />
         {children}
       </body>
     </html>
