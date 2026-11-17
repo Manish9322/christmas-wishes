@@ -621,6 +621,24 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     );
   };
 
+  const pushSolidCapTri = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+  ) => {
+    const abX = b.x - a.x;
+    const abY = b.y - a.y;
+    const acX = c.x - a.x;
+    const acY = c.y - a.y;
+    const crossZ = abX * acY - abY * acX;
+    const p1 = a;
+    const p2 = crossZ >= 0 ? b : c;
+    const p3 = crossZ >= 0 ? c : b;
+
+    pushTri(qrInnerBuilder, p1, p2, p3, localInwardFaceNormal, innerColor);
+    qrInnerBuilder.uvs.push(0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+  };
+
   const pushQrOuterTri = (
     a: THREE.Vector3,
     b: THREE.Vector3,
@@ -656,6 +674,9 @@ export function createFacetedWishGeometries(): WishShellGeometries {
 
     // 1. Tile inside-facing QR face (+Z in tile-local space, with QR UV alignment)
     pushQrInnerTri(localCenterInner, iA, iB);
+
+    // 1b. Solid inner cap backing behind the QR texture to ensure 100% opacity with zero see-through
+    pushSolidCapTri(localCenterInner, iA, iB);
 
     // 2. Tile outer shell face (-Z in tile-local space, matching surrounding monochrome facets)
     pushQrOuterTri(localCenterOuter, oA, oB);

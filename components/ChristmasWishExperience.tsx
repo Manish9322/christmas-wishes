@@ -4,7 +4,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {motion, AnimatePresence} from 'motion/react';
-import {Github, RotateCcw, X} from 'lucide-react';
+import {Github, RotateCcw} from 'lucide-react';
 import QRCode from 'qrcode';
 import {createFacetedWishGeometries} from '@/lib/wish-geometry';
 
@@ -154,25 +154,6 @@ function createQrTileTextures(url: string): {
   return {subtleTex, scanTex};
 }
 
-function createTileDepthHaloTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    const grad = ctx.createRadialGradient(128, 128, 12, 128, 128, 124);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
-    grad.addColorStop(0.45, 'rgba(212, 212, 216, 0.06)');
-    grad.addColorStop(0.75, 'rgba(0, 0, 0, 0.25)');
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 256);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
 function createContactShadowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -233,6 +214,7 @@ export default function ChristmasWishExperience() {
   const [isHoveringInteractive, setIsHoveringInteractive] = useState(false);
   const [isDraggingUI, setIsDraggingUI] = useState(false);
   const [qrSelected, setQrSelected] = useState(false);
+  const [qrFlipped, setQrFlipped] = useState(false);
   const [showGithubDialog, setShowGithubDialog] = useState(false);
 
   const webglUnavailable = React.useSyncExternalStore(
@@ -244,9 +226,11 @@ export default function ChristmasWishExperience() {
   const phaseRef = useRef<WishPhase>('intact');
   const zoomedInRef = useRef(false);
   const qrSelectedRef = useRef(false);
+  const qrFlippedRef = useRef(false);
   const showDialogRef = useRef(false);
   const closeHandlerRef = useRef<(() => void) | null>(null);
   const deselectQrHandlerRef = useRef<(() => void) | null>(null);
+  const githubOverlayRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     showDialogRef.current = showGithubDialog;
@@ -306,6 +290,7 @@ export default function ChristmasWishExperience() {
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setClearColor(0x000000, 0);
+    renderer.autoClear = false;
 
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.width = '100%';
@@ -364,9 +349,23 @@ export default function ChristmasWishExperience() {
     interiorLight.position.set(0, 0, 0);
     scene.add(interiorLight);
 
-    // Subtle accent light for the enlarged floating QR polygon bevels
+    // Subtle accent light & dedicated overlay scene so the lifted/flipped QR tile stays 100% opaque with zero dimming bleed
+    const qrOverlayScene = new THREE.Scene();
+    qrOverlayScene.environment = envTarget.texture;
+    const qrOverlayHemi = new THREE.HemisphereLight(0xf4f4f5, 0x18181b, 0.82);
+    qrOverlayScene.add(qrOverlayHemi);
+    const qrOverlayKey = new THREE.DirectionalLight(0xffffff, 2.05);
+    qrOverlayKey.position.set(4.4, 6.2, 5.2);
+    qrOverlayScene.add(qrOverlayKey);
+    const qrOverlayRim = new THREE.DirectionalLight(0xfafafa, 1.55);
+    qrOverlayRim.position.set(-4.8, 3.2, -4.6);
+    qrOverlayScene.add(qrOverlayRim);
+    const qrOverlayBounce = new THREE.DirectionalLight(0xd4d4d8, 0.5);
+    qrOverlayBounce.position.set(3.2, -3.8, 2.4);
+    qrOverlayScene.add(qrOverlayBounce);
+
     const qrAccentLight = new THREE.PointLight(0xf4f4f5, 0, 6, 1.6);
-    scene.add(qrAccentLight);
+    qrOverlayScene.add(qrAccentLight);
 
     // Soft grounded studio contact shadow
     const shadowTex = createContactShadowTexture();
@@ -462,10 +461,10 @@ export default function ChristmasWishExperience() {
 
     const qrSubtleMat = new THREE.MeshBasicMaterial({
       map: subtleTex,
-      transparent: true,
-      opacity: 0,
+      transparent: false,
+      alphaTest: 0.5,
       toneMapped: false,
-      depthWrite: false,
+      depthWrite: true,
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
@@ -473,10 +472,10 @@ export default function ChristmasWishExperience() {
 
     const qrScanMat = new THREE.MeshBasicMaterial({
       map: scanTex,
-      transparent: true,
-      opacity: 0,
+      transparent: false,
+      alphaTest: 0.5,
       toneMapped: false,
-      depthWrite: false,
+      depthWrite: true,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
@@ -487,45 +486,36 @@ export default function ChristmasWishExperience() {
       roughness: 0.34,
       metalness: 0.22,
       envMapIntensity: 1.05,
-      transparent: true,
-      opacity: 1,
+      transparent: false,
       depthWrite: true,
     });
 
-    const haloTex = createTileDepthHaloTexture();
-    const qrHaloMat = new THREE.MeshBasicMaterial({
-      map: haloTex,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      depthTest: false,
-    });
-    const qrHaloGeo = new THREE.PlaneGeometry(1, 1);
-    const qrHaloMesh = new THREE.Mesh(qrHaloGeo, qrHaloMat);
-    const haloSpan = qrTile.maxRadius * 3.1;
-    qrHaloMesh.scale.set(haloSpan, haloSpan, 1);
-    qrHaloMesh.position.z = -0.14;
-    qrHaloMesh.renderOrder = 1;
-    qrHaloMesh.visible = false;
-    qrTilePivot.add(qrHaloMesh);
-
     const qrOuterMesh = new THREE.Mesh(qrTile.outerGeo, qrTileShellMat);
-    qrOuterMesh.castShadow = !isSoftwareGl;
-    qrOuterMesh.receiveShadow = !isSoftwareGl;
+    qrOuterMesh.castShadow = false;
+    qrOuterMesh.receiveShadow = false;
     qrOuterMesh.renderOrder = 2;
     qrTilePivot.add(qrOuterMesh);
 
     const qrInnerMesh = new THREE.Mesh(qrTile.innerGeo, qrTileShellMat);
+    qrInnerMesh.castShadow = false;
+    qrInnerMesh.receiveShadow = false;
     qrInnerMesh.renderOrder = 2;
     qrTilePivot.add(qrInnerMesh);
 
     const qrRimMesh = new THREE.Mesh(qrTile.rimGeo, qrTileShellMat);
+    qrRimMesh.castShadow = false;
+    qrRimMesh.receiveShadow = false;
     qrRimMesh.renderOrder = 2;
     qrTilePivot.add(qrRimMesh);
 
     const qrOuterEdges = new THREE.LineSegments(qrTile.outerEdgeGeo, edgeMaterial);
     qrOuterEdges.renderOrder = 3;
     qrTilePivot.add(qrOuterEdges);
+
+    // Anchor on the outer (back) face of the QR tile for aligning the flipped GitHub icon button
+    const qrBackButtonAnchor = new THREE.Object3D();
+    qrBackButtonAnchor.position.set(0, 0, -0.085);
+    qrTilePivot.add(qrBackButtonAnchor);
 
     // Both subtle hidden QR (inside bowl) and full-contrast scan QR map onto the inside-facing polygon surface
     const qrSubtleMesh = new THREE.Mesh(qrTile.innerGeo, qrSubtleMat);
@@ -537,6 +527,13 @@ export default function ChristmasWishExperience() {
     qrTilePivot.add(qrScanMesh);
 
     const intactInteractiveMeshes = [upperMesh, lowerMesh, qrOuterMesh];
+    const qrTileHitMeshes = [
+      qrOuterMesh,
+      qrInnerMesh,
+      qrRimMesh,
+      qrSubtleMesh,
+      qrScanMesh,
+    ];
     const openedHitTestMeshes = [
       upperMesh,
       lowerMesh,
@@ -618,6 +615,9 @@ export default function ChristmasWishExperience() {
     const _targetScale = new THREE.Vector3();
     const _floatEuler = new THREE.Euler();
     const _floatQuat = new THREE.Quaternion();
+    const _flipQuat = new THREE.Quaternion();
+    const _yAxis = new THREE.Vector3(0, 1, 0);
+    const _backWorldPos = new THREE.Vector3();
 
     // Rotation & drag state
     let rotY = 0.25;
@@ -629,8 +629,9 @@ export default function ChristmasWishExperience() {
     let openElapsed = 0;
     let confettiActive = false;
 
-    // Independent QR polygon animation, gentle float & movement stabilization state
+    // Independent QR polygon animation, flip angle, gentle float & movement stabilization state
     let qrAnimT = 0;
+    let qrFlipAngle = 0;
     let qrFloatWeight = 0;
     let qrFloatTime = 0;
     let motionFactor = 1;
@@ -714,14 +715,25 @@ export default function ChristmasWishExperience() {
     const triggerSelectQr = () => {
       if (phaseRef.current !== 'opened' || qrSelectedRef.current) return;
       qrSelectedRef.current = true;
+      qrFlippedRef.current = false;
       setQrSelected(true);
+      setQrFlipped(false);
       setIsHoveringInteractive(false);
+    };
+
+    const triggerToggleFlipQr = () => {
+      if (!qrSelectedRef.current) return;
+      const next = !qrFlippedRef.current;
+      qrFlippedRef.current = next;
+      setQrFlipped(next);
     };
 
     const triggerDeselectQr = () => {
       if (!qrSelectedRef.current) return;
       qrSelectedRef.current = false;
+      qrFlippedRef.current = false;
       setQrSelected(false);
+      setQrFlipped(false);
       setShowGithubDialog(false);
       setIsHoveringInteractive(false);
     };
@@ -748,9 +760,14 @@ export default function ChristmasWishExperience() {
       _pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       _raycaster.setFromCamera(_pointerNdc, camera);
 
-      // When enlarged QR polygon is active, tapping it or background returns it smoothly
+      // When enlarged QR polygon is active: clicking on the tile flips it; clicking elsewhere returns it in place
       if (qrSelectedRef.current) {
-        triggerDeselectQr();
+        const tileHits = _raycaster.intersectObjects(qrTileHitMeshes, false);
+        if (tileHits.length > 0) {
+          triggerToggleFlipQr();
+        } else {
+          triggerDeselectQr();
+        }
         return;
       }
 
@@ -878,7 +895,10 @@ export default function ChristmasWishExperience() {
           if (phaseRef.current === 'intact') {
             const hits = _raycaster.intersectObjects(intactInteractiveMeshes, false);
             setIsHoveringInteractive(hits.length > 0);
-          } else if (phaseRef.current === 'opened' && !qrSelectedRef.current) {
+          } else if (phaseRef.current === 'opened' && qrSelectedRef.current) {
+            const hits = _raycaster.intersectObjects(qrTileHitMeshes, false);
+            setIsHoveringInteractive(hits.length > 0);
+          } else if (phaseRef.current === 'opened') {
             const hits = _raycaster.intersectObjects(openedHitTestMeshes, false);
             setIsHoveringInteractive(hits.length > 0 && isQrInnerTarget(hits[0].object));
           } else {
@@ -895,15 +915,28 @@ export default function ChristmasWishExperience() {
       activePointers.delete(e.pointerId);
 
       if (e.pointerId === dragPointerId) {
+        const dx = e.clientX - pointerDownX;
+        const dy = e.clientY - pointerDownY;
         const wasTap =
-          totalDragDist < 7 &&
-          Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY) < 7;
+          totalDragDist < 10 && Math.hypot(dx, dy) < 10;
+        const wasHorizontalSwipeOnTile =
+          qrSelectedRef.current &&
+          Math.abs(dx) > 22 &&
+          Math.abs(dx) > Math.abs(dy) * 1.4;
         isDragging = false;
         setIsDraggingUI(false);
         dragPointerId = null;
 
         if (wasTap) {
           handleSceneTap(e.clientX, e.clientY);
+        } else if (wasHorizontalSwipeOnTile) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          _pointerNdc.x = ((pointerDownX - rect.left) / rect.width) * 2 - 1;
+          _pointerNdc.y = -((pointerDownY - rect.top) / rect.height) * 2 + 1;
+          _raycaster.setFromCamera(_pointerNdc, camera);
+          if (_raycaster.intersectObjects(qrTileHitMeshes, false).length > 0) {
+            triggerToggleFlipQr();
+          }
         }
       }
 
@@ -1204,7 +1237,7 @@ export default function ChristmasWishExperience() {
       sculptureRoot.updateMatrixWorld(true);
       qrHomeSlot.matrixWorld.decompose(_homePos, _homeQuat, _homeScale);
 
-      // Independent QR polygon enlargement, gentle floating & restoration animation
+      // Independent QR polygon enlargement, 180-deg flip, gentle floating & restoration animation
       const targetQrT = qrSelectedRef.current ? 1 : 0;
       qrAnimT = THREE.MathUtils.damp(
         qrAnimT,
@@ -1214,6 +1247,18 @@ export default function ChristmasWishExperience() {
       );
       if (!qrSelectedRef.current && qrAnimT < 0.0008) {
         qrAnimT = 0;
+      }
+
+      const targetFlipAngle =
+        qrSelectedRef.current && qrFlippedRef.current ? Math.PI : 0;
+      qrFlipAngle = THREE.MathUtils.damp(
+        qrFlipAngle,
+        targetFlipAngle,
+        qrSelectedRef.current ? 7.2 : 8.5,
+        dt,
+      );
+      if (Math.abs(qrFlipAngle - targetFlipAngle) < 0.0008) {
+        qrFlipAngle = targetFlipAngle;
       }
 
       // Gentle restrained floating animation once enlarged, smoothing down cleanly to 0 on close
@@ -1231,13 +1276,17 @@ export default function ChristmasWishExperience() {
         qrFloatTime = 0;
       }
 
+      const activeViewDepth = Math.min(
+        3.2,
+        Math.max(1.45, currentDistance - 1.55),
+      );
+
       if (qrAnimT === 0) {
         qrTilePivot.position.copy(_homePos);
         qrTilePivot.quaternion.copy(_homeQuat);
         qrTilePivot.scale.copy(_homeScale);
       } else {
-        const viewDepth = 3.2;
-        const visHalfH = viewDepth * TAN_HALF_V;
+        const visHalfH = activeViewDepth * TAN_HALF_V;
         const visHalfW = visHalfH * camera.aspect;
         const desiredOuterRadius = Math.min(visHalfH * 0.45, visHalfW * 0.67);
         const targetScaleScalar =
@@ -1254,10 +1303,11 @@ export default function ChristmasWishExperience() {
         _targetPos.set(
           floatX,
           0.08 + visHalfH * 0.1 + floatY,
-          currentDistance - viewDepth + floatZ,
+          currentDistance - activeViewDepth + floatZ,
         );
         _floatQuat.setFromEuler(_floatEuler.set(tiltX, tiltY, tiltZ));
-        _targetQuat.copy(camera.quaternion).multiply(_floatQuat);
+        _flipQuat.setFromAxisAngle(_yAxis, qrFlipAngle);
+        _targetQuat.copy(camera.quaternion).multiply(_floatQuat).multiply(_flipQuat);
         _targetScale.setScalar(targetScaleScalar);
 
         qrTilePivot.position.lerpVectors(_homePos, _targetPos, qrAnimT);
@@ -1265,37 +1315,55 @@ export default function ChristmasWishExperience() {
         qrTilePivot.scale.lerpVectors(_homeScale, _targetScale, qrAnimT);
       }
 
-      // Clearer monochrome QR inside the bowl & full-contrast scannable reveal when enlarged
-      const subtleTargetOpacity =
-        phaseRef.current === 'opened' && !qrSelectedRef.current ? 0.68 : 0;
-      qrSubtleMat.opacity = THREE.MathUtils.damp(
-        qrSubtleMat.opacity,
-        subtleTargetOpacity,
-        6.0,
-        dt,
-      );
-      qrSubtleMesh.visible = qrSubtleMat.opacity > 0.005;
+      qrTilePivot.updateMatrixWorld(true);
 
-      const scanTargetOpacity = qrSelectedRef.current ? 1 : 0;
-      qrScanMat.opacity = THREE.MathUtils.damp(
-        qrScanMat.opacity,
-        scanTargetOpacity,
-        6.8,
-        dt,
-      );
-      qrScanMesh.visible = qrScanMat.opacity > 0.005;
+      // Keep the GitHub icon button centered directly on the flipped outer side of the tile
+      const overlayEl = githubOverlayRef.current;
+      if (overlayEl) {
+        const flipProgress = qrFlipAngle / Math.PI;
+        const backFaceVisible =
+          qrSelectedRef.current && qrFlippedRef.current && flipProgress > 0.52;
+        if (backFaceVisible && qrAnimT > 0.4) {
+          qrBackButtonAnchor.getWorldPosition(_backWorldPos);
+          _backWorldPos.project(camera);
+          const w = container.clientWidth || window.innerWidth;
+          const h = container.clientHeight || window.innerHeight;
+          const screenX = (_backWorldPos.x * 0.5 + 0.5) * w;
+          const screenY = (-_backWorldPos.y * 0.5 + 0.5) * h;
+          const appear = THREE.MathUtils.clamp(
+            (flipProgress - 0.52) / 0.36,
+            0,
+            1,
+          );
+          const scale = 0.85 + 0.15 * appear;
+          overlayEl.style.opacity = appear.toFixed(3);
+          overlayEl.style.transform = `translate3d(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+          overlayEl.style.pointerEvents = appear > 0.6 ? 'auto' : 'none';
+        } else {
+          overlayEl.style.opacity = '0';
+          overlayEl.style.pointerEvents = 'none';
+        }
+      }
 
-      // Depth halo & bevel accent lighting for the enlarged floating tile
+      // Keep lifted/enlarged/flipped tile in isolated overlay scene so it never clips or receives background transparency
+      const useOverlayScene = qrSelectedRef.current || qrAnimT > 0.01;
+      if (useOverlayScene && qrTilePivot.parent !== qrOverlayScene) {
+        qrOverlayScene.add(qrTilePivot);
+      } else if (!useOverlayScene && qrTilePivot.parent !== scene) {
+        scene.add(qrTilePivot);
+      }
 
-      const haloTargetOpacity = qrSelectedRef.current ? 0.72 : 0;
-      qrHaloMat.opacity = THREE.MathUtils.damp(
-        qrHaloMat.opacity,
-        haloTargetOpacity,
-        5.8,
-        dt,
-      );
-      qrHaloMesh.visible = qrHaloMat.opacity > 0.005;
+      // Full-opacity monochrome QR inside the bowl & full-opacity scannable reveal when enlarged (no semi-transparency)
+      const showSubtleInBowl =
+        phaseRef.current === 'opened' && !qrSelectedRef.current && qrAnimT < 0.02;
+      qrSubtleMat.opacity = 1;
+      qrSubtleMesh.visible = showSubtleInBowl;
 
+      const showScanFront = qrSelectedRef.current || qrAnimT >= 0.02;
+      qrScanMat.opacity = 1;
+      qrScanMesh.visible = showScanFront;
+
+      // Subtle bevel accent lighting for the enlarged floating tile (no tile shadow)
       const accentTargetIntensity = qrSelectedRef.current ? 2.1 : 0;
       qrAccentLight.intensity = THREE.MathUtils.damp(
         qrAccentLight.intensity,
@@ -1314,11 +1382,16 @@ export default function ChristmasWishExperience() {
       );
       backdropDimPlane.visible = backdropDimMat.opacity > 0.005;
       if (backdropDimPlane.visible) {
-        backdropDimPlane.position.set(0, 0.08, currentDistance - 4.0);
+        backdropDimPlane.position.set(0, 0.08, currentDistance - 1.5);
         backdropDimPlane.quaternion.copy(camera.quaternion);
       }
 
+      renderer.clear();
       renderer.render(scene, camera);
+      if (qrTilePivot.parent === qrOverlayScene) {
+        renderer.clearDepth();
+        renderer.render(qrOverlayScene, camera);
+      }
 
       if (isSoftwareGl) {
         afterDraw(tick);
@@ -1328,6 +1401,7 @@ export default function ChristmasWishExperience() {
     };
 
     if (isSoftwareGl) {
+      renderer.clear();
       renderer.render(scene, camera);
       afterDraw(tick);
     } else {
@@ -1366,9 +1440,6 @@ export default function ChristmasWishExperience() {
       qrScanMat.dispose();
       subtleTex.dispose();
       scanTex.dispose();
-      qrHaloGeo.dispose();
-      qrHaloMat.dispose();
-      haloTex.dispose();
       backdropDimGeo.dispose();
       backdropDimMat.dispose();
       ribbonGeo.dispose();
@@ -1498,50 +1569,53 @@ export default function ChristmasWishExperience() {
         </AnimatePresence>
       </div>
 
-      {/* Refined monochrome hierarchy & GitHub action below the enlarged floating QR polygon */}
+      {/* Standalone GitHub icon anchored directly on the flipped back face of the QR tile (no circle around it) */}
+      <div
+        ref={githubOverlayRef}
+        aria-hidden={!(qrSelected && qrFlipped && wishPhase === 'opened')}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="fixed left-0 top-0 z-30 opacity-0 pointer-events-none"
+      >
+        <div className="relative inline-flex items-center justify-center">
+          <button
+            type="button"
+            aria-label="GitHub profile"
+            aria-describedby="github-profile-tooltip"
+            tabIndex={qrSelected && qrFlipped && wishPhase === 'opened' ? 0 : -1}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowGithubDialog(true);
+            }}
+            className="peer inline-flex items-center justify-center p-2 bg-transparent border-0 text-zinc-100 hover:text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)] transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 rounded-md"
+          >
+            <Github size={28} strokeWidth={1.85} aria-hidden="true" />
+          </button>
+          <span
+            id="github-profile-tooltip"
+            role="tooltip"
+            className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-zinc-950/95 border border-zinc-700/70 font-sans text-[11px] font-normal tracking-[0.04em] text-zinc-200 whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
+          >
+            GitHub profile
+          </span>
+        </div>
+      </div>
+
+      {/* Subtle single-line interaction cue while QR tile is enlarged */}
       <AnimatePresence>
         {qrSelected && wishPhase === 'opened' && (
-          <motion.div
-            initial={{opacity: 0, y: 12}}
-            animate={{opacity: 1, y: 0}}
-            exit={{opacity: 0, y: 8}}
-            transition={{duration: 0.34, ease: [0.16, 1, 0.3, 1]}}
-            className="pointer-events-none fixed bottom-9 sm:bottom-12 inset-x-0 z-30 flex flex-col items-center justify-center gap-3 px-4"
+          <motion.p
+            initial={{opacity: 0}}
+            animate={{opacity: 0.68}}
+            exit={{opacity: 0}}
+            transition={{duration: 0.3}}
+            className="pointer-events-none fixed bottom-6 inset-x-0 z-20 flex items-center justify-center text-center font-sans font-normal text-xs tracking-[0.05em] text-zinc-400 px-4 select-none"
           >
-            <p className="font-sans text-[11px] font-normal uppercase tracking-[0.18em] text-zinc-400/90 select-none">
-              Scan to connect &middot; Manish9322
-            </p>
-
-            <div className="flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setShowGithubDialog(true)}
-                className="pointer-events-auto inline-flex items-center gap-2 h-10 px-4 rounded-full bg-zinc-950/92 hover:bg-zinc-800/95 border border-zinc-500/60 hover:border-zinc-200/80 text-zinc-100 hover:text-white font-sans text-xs font-normal tracking-[0.04em] shadow-[0_6px_22px_rgba(0,0,0,0.72)] transition-all duration-200 hover:scale-[1.03] active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              >
-                <Github size={15} strokeWidth={1.75} aria-hidden="true" />
-                <span>GitHub Profile</span>
-              </button>
-
-              <div className="relative inline-flex items-center justify-center pointer-events-auto">
-                <button
-                  type="button"
-                  aria-label="Close QR code"
-                  aria-describedby="close-qr-tooltip"
-                  onClick={() => deselectQrHandlerRef.current?.()}
-                  className="peer inline-flex items-center justify-center w-10 h-10 rounded-full bg-zinc-950/92 hover:bg-zinc-800/95 border border-zinc-600/60 hover:border-zinc-300/80 text-zinc-300 hover:text-white shadow-[0_6px_22px_rgba(0,0,0,0.72)] transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-                >
-                  <X size={15} strokeWidth={1.75} aria-hidden="true" />
-                </button>
-                <span
-                  id="close-qr-tooltip"
-                  role="tooltip"
-                  className="pointer-events-none absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-zinc-950/95 border border-zinc-700/70 font-sans text-[11px] font-normal tracking-[0.04em] text-zinc-200 whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
-                >
-                  Close QR
-                </span>
-              </div>
-            </div>
-          </motion.div>
+            <span>{qrFlipped ? 'Click tile for QR' : 'Click tile to flip'}</span>
+            <span aria-hidden="true" className="mx-2.5 text-zinc-600">
+              |
+            </span>
+            <span>Click elsewhere to close</span>
+          </motion.p>
         )}
       </AnimatePresence>
 
