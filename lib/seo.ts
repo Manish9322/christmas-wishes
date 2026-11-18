@@ -1,7 +1,7 @@
 import type {Metadata} from 'next';
 import {headers} from 'next/headers';
 
-export const SITE_NAME = 'A Little Christmas Wish';
+export const SITE_NAME = 'Minimal 3D';
 
 export const OG_IMAGE_WIDTH = 1200;
 export const OG_IMAGE_HEIGHT = 630;
@@ -61,18 +61,18 @@ export interface PageSeoConfig {
 
 export const HOME_SEO: PageSeoConfig = {
   path: '/',
-  title: 'Merry Christmas! | A Little Christmas Wish',
-  socialTitle: 'Merry Christmas! | A Little Christmas Wish',
+  title: 'Faceted Form | Minimal 3D',
+  socialTitle: 'Faceted Form',
   imagePath: '/og-image.png',
-  imageAlt: 'Merry Christmas! monochrome 3D faceted Christmas sculpture',
+  imageAlt: 'Monochrome 3D faceted sculpture',
 };
 
 export const ORB_SEO: PageSeoConfig = {
   path: '/orb',
-  title: 'Christmas Ornament | A Little Christmas Wish',
-  socialTitle: 'Merry Christmas! | A Little Christmas Wish',
+  title: 'Spiral Sphere | Minimal 3D',
+  socialTitle: 'Spiral Sphere',
   imagePath: '/og-orb.png',
-  imageAlt: 'Merry Christmas! monochrome 3D spiral Christmas ornament',
+  imageAlt: 'Minimal 3D spiral sphere',
 };
 
 export async function buildPageMetadata(
