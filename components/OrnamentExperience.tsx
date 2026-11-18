@@ -1,13 +1,13 @@
 'use client';
 
 import React, {useEffect, useRef, useState} from 'react';
-import Image from 'next/image';
 import * as THREE from 'three';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {motion, AnimatePresence} from 'motion/react';
 import {RotateCcw} from 'lucide-react';
 import QRCode from 'qrcode';
 import {createOrnamentParts} from '@/lib/ornament-geometry';
+import {createPortfolioBackMaterial} from '@/lib/portfolio-back-material';
 import portfolioIcon from '@/public/icon.png';
 
 type OrnamentPhase = 'intact' | 'opened' | 'closing';
@@ -201,6 +201,8 @@ export default function OrnamentExperience() {
   const [isDraggingUI, setIsDraggingUI] = useState(false);
   const [qrSelected, setQrSelected] = useState(false);
   const [qrFlipped, setQrFlipped] = useState(false);
+  const [isBackIconHovering, setIsBackIconHovering] = useState(false);
+  const [isBackIconFocused, setIsBackIconFocused] = useState(false);
   const [showPortfolioDialog, setShowPortfolioDialog] = useState(false);
 
   const webglUnavailable = React.useSyncExternalStore(
@@ -213,6 +215,8 @@ export default function OrnamentExperience() {
   const zoomedInRef = useRef(false);
   const qrSelectedRef = useRef(false);
   const qrFlippedRef = useRef(false);
+  const backIconHoveredRef = useRef(false);
+  const backIconFocusedRef = useRef(false);
   const showDialogRef = useRef(false);
   const closeHandlerRef = useRef<(() => void) | null>(null);
   const deselectQrHandlerRef = useRef<(() => void) | null>(null);
@@ -496,12 +500,15 @@ export default function OrnamentExperience() {
       depthWrite: true,
     });
 
-    // Solid opaque oxblood burgundy back face & thin edge (zero transparency)
-    const qrFixedFaceMat = new THREE.MeshBasicMaterial({
-      color: 0x4d0f17,
-      toneMapped: false,
-      transparent: false,
-      depthWrite: true,
+    const BACK_ICON_FRACTION = 0.26;
+    const BACK_ICON_HIT_HALF = 0.155;
+
+    // Solid opaque oxblood burgundy back face with integrated 3D portfolio icon & thin edge
+    const qrBackHandle = createPortfolioBackMaterial({
+      bgHex: 0x4d0f17,
+      iconUrl: portfolioIcon.src,
+      iconFraction: BACK_ICON_FRACTION,
+      anisotropy: maxAnisotropy,
     });
 
     const qrFixedRimMat = new THREE.MeshBasicMaterial({
@@ -513,7 +520,7 @@ export default function OrnamentExperience() {
 
     const qrOuterMesh = new THREE.Mesh<THREE.BufferGeometry, THREE.Material>(
       qrTile.outerGeo,
-      qrFixedFaceMat,
+      qrBackHandle.material,
     );
     qrOuterMesh.castShadow = false;
     qrOuterMesh.receiveShadow = false;
@@ -545,9 +552,9 @@ export default function OrnamentExperience() {
     qrHitProxyMesh.position.set(0, 0, 0.006);
     qrTilePivot.add(qrHitProxyMesh);
 
-    // Anchor centered on the reverse face of the flipped sticker for aligning the portfolio icon
+    // Anchor at the bottom-center edge of the 3D portfolio icon on the sticker's back face for tooltip alignment
     const qrBackButtonAnchor = new THREE.Object3D();
-    qrBackButtonAnchor.position.set(0, 0, -0.008);
+    qrBackButtonAnchor.position.set(0, -qrTile.stickerHalf * BACK_ICON_FRACTION, -0.005);
     qrTilePivot.add(qrBackButtonAnchor);
 
     const intactInteractiveMeshes = [
@@ -662,6 +669,7 @@ export default function OrnamentExperience() {
     let qrFlipAngle = 0;
     let qrFloatWeight = 0;
     let qrFloatTime = 0;
+    let backIconColorMix = 0;
     let motionFactor = 1;
     let motionTime = 0;
 
@@ -738,10 +746,32 @@ export default function OrnamentExperience() {
       spawnCelebrationBurst();
     };
 
+    const resetBackIconInteraction = () => {
+      if (backIconHoveredRef.current) {
+        backIconHoveredRef.current = false;
+        setIsBackIconHovering(false);
+      }
+      if (backIconFocusedRef.current) {
+        backIconFocusedRef.current = false;
+        setIsBackIconFocused(false);
+      }
+    };
+
+    const isBackIconHit = (hit: THREE.Intersection): boolean => {
+      if (!qrFlippedRef.current || hit.object !== qrOuterMesh || !hit.uv) {
+        return false;
+      }
+      return (
+        Math.abs(hit.uv.x - 0.5) <= BACK_ICON_HIT_HALF &&
+        Math.abs(hit.uv.y - 0.5) <= BACK_ICON_HIT_HALF
+      );
+    };
+
     const triggerSelectQr = () => {
       if (phaseRef.current !== 'opened' || qrSelectedRef.current) return;
       qrSelectedRef.current = true;
       qrFlippedRef.current = false;
+      resetBackIconInteraction();
       setQrSelected(true);
       setQrFlipped(false);
       setIsHoveringInteractive(false);
@@ -751,6 +781,7 @@ export default function OrnamentExperience() {
       if (!qrSelectedRef.current) return;
       const next = !qrFlippedRef.current;
       qrFlippedRef.current = next;
+      if (!next) resetBackIconInteraction();
       setQrFlipped(next);
     };
 
@@ -758,6 +789,7 @@ export default function OrnamentExperience() {
       if (!qrSelectedRef.current) return;
       qrSelectedRef.current = false;
       qrFlippedRef.current = false;
+      resetBackIconInteraction();
       setQrSelected(false);
       setQrFlipped(false);
       setShowPortfolioDialog(false);
@@ -789,7 +821,11 @@ export default function OrnamentExperience() {
       if (qrSelectedRef.current) {
         const tileHits = _raycaster.intersectObjects(qrTileHitMeshes, false);
         if (tileHits.length > 0) {
-          triggerToggleFlipQr();
+          if (isBackIconHit(tileHits[0])) {
+            setShowPortfolioDialog(true);
+          } else {
+            triggerToggleFlipQr();
+          }
         } else {
           triggerDeselectQr();
         }
@@ -919,14 +955,31 @@ export default function OrnamentExperience() {
           if (phaseRef.current === 'intact') {
             const hits = _raycaster.intersectObjects(intactInteractiveMeshes, false);
             setIsHoveringInteractive(hits.length > 0);
+            if (backIconHoveredRef.current) {
+              backIconHoveredRef.current = false;
+              setIsBackIconHovering(false);
+            }
           } else if (phaseRef.current === 'opened' && qrSelectedRef.current) {
             const hits = _raycaster.intersectObjects(qrTileHitMeshes, false);
             setIsHoveringInteractive(hits.length > 0);
+            const nextIconHover = hits.length > 0 && isBackIconHit(hits[0]);
+            if (nextIconHover !== backIconHoveredRef.current) {
+              backIconHoveredRef.current = nextIconHover;
+              setIsBackIconHovering(nextIconHover);
+            }
           } else if (phaseRef.current === 'opened') {
             const hits = _raycaster.intersectObjects(openedHitTestMeshes, false);
             setIsHoveringInteractive(hits.length > 0 && isQrInnerTarget(hits[0].object));
+            if (backIconHoveredRef.current) {
+              backIconHoveredRef.current = false;
+              setIsBackIconHovering(false);
+            }
           } else {
             setIsHoveringInteractive(false);
+            if (backIconHoveredRef.current) {
+              backIconHoveredRef.current = false;
+              setIsBackIconHovering(false);
+            }
           }
         }
       }
@@ -1335,7 +1388,25 @@ export default function OrnamentExperience() {
 
       qrTilePivot.updateMatrixWorld(true);
 
-      // Keep the portfolio icon button centered directly on the flipped outer side of the plaque
+      // Smoothly transition the embedded 3D back-face icon between monochrome (rest) and full color (hover/focus)
+      const targetColorMix =
+        qrSelectedRef.current &&
+        qrFlippedRef.current &&
+        (backIconHoveredRef.current || backIconFocusedRef.current)
+          ? 1
+          : 0;
+      backIconColorMix = THREE.MathUtils.damp(
+        backIconColorMix,
+        targetColorMix,
+        15,
+        dt,
+      );
+      if (Math.abs(backIconColorMix - targetColorMix) < 0.002) {
+        backIconColorMix = targetColorMix;
+      }
+      qrBackHandle.setColorMix(backIconColorMix);
+
+      // Anchor the "My Portfolio" tooltip & keyboard trigger directly beneath the 3D surface icon
       const overlayEl = portfolioOverlayRef.current;
       if (overlayEl) {
         const flipProgress = qrFlipAngle / Math.PI;
@@ -1348,18 +1419,10 @@ export default function OrnamentExperience() {
           const h = container.clientHeight || window.innerHeight;
           const screenX = (_backWorldPos.x * 0.5 + 0.5) * w;
           const screenY = (-_backWorldPos.y * 0.5 + 0.5) * h;
-          const appear = THREE.MathUtils.clamp(
-            (flipProgress - 0.52) / 0.36,
-            0,
-            1,
-          );
-          const scale = 0.85 + 0.15 * appear;
-          overlayEl.style.opacity = appear.toFixed(3);
-          overlayEl.style.transform = `translate3d(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
-          overlayEl.style.pointerEvents = appear > 0.6 ? 'auto' : 'none';
+          overlayEl.style.opacity = '1';
+          overlayEl.style.transform = `translate3d(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px, 0) translate(-50%, 0)`;
         } else {
           overlayEl.style.opacity = '0';
-          overlayEl.style.pointerEvents = 'none';
         }
       }
 
@@ -1451,7 +1514,7 @@ export default function OrnamentExperience() {
       rimBevelMat.dispose();
       capMat.dispose();
       hardwareCrimsonMat.dispose();
-      qrFixedFaceMat.dispose();
+      qrBackHandle.dispose();
       qrFixedRimMat.dispose();
       qrSubtleMat.dispose();
       qrScanMat.dispose();
@@ -1589,43 +1652,44 @@ export default function OrnamentExperience() {
         </AnimatePresence>
       </div>
 
-      {/* Standalone Portfolio icon anchored on the flipped back face (monochrome at rest, color on hover, no scale/circle/glow) */}
+      {/* Accessible keyboard trigger + tooltip anchored under the 3D surface portfolio icon */}
       <div
         ref={portfolioOverlayRef}
         aria-hidden={!(qrSelected && qrFlipped && ornamentPhase === 'opened')}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="fixed left-0 top-0 z-30 opacity-0 pointer-events-none"
+        className="pointer-events-none fixed left-0 top-0 z-30 flex flex-col items-center opacity-0"
       >
-        <div className="relative inline-flex items-center justify-center">
-          <button
-            type="button"
-            aria-label="My Portfolio"
-            aria-describedby="orb-portfolio-tooltip"
-            tabIndex={qrSelected && qrFlipped && ornamentPhase === 'opened' ? 0 : -1}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPortfolioDialog(true);
-            }}
-            className="group peer inline-flex items-center justify-center p-2 bg-transparent border-0 cursor-pointer focus-visible:outline-none"
-          >
-            <Image
-              src={portfolioIcon}
-              alt=""
-              width={48}
-              height={48}
-              referrerPolicy="no-referrer"
-              aria-hidden="true"
-              className="w-12 h-12 object-contain grayscale group-hover:grayscale-0 group-focus-visible:grayscale-0 transition-[filter] duration-200"
-            />
-          </button>
-          <span
-            id="orb-portfolio-tooltip"
-            role="tooltip"
-            className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-[#2b090e] text-white font-sans text-[11px] font-normal tracking-[0.04em] whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
-          >
-            My Portfolio
-          </span>
-        </div>
+        <button
+          type="button"
+          aria-label="My Portfolio"
+          aria-describedby="orb-portfolio-tooltip"
+          tabIndex={qrSelected && qrFlipped && ornamentPhase === 'opened' ? 0 : -1}
+          onFocus={() => {
+            backIconFocusedRef.current = true;
+            setIsBackIconFocused(true);
+          }}
+          onBlur={() => {
+            backIconFocusedRef.current = false;
+            setIsBackIconFocused(false);
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowPortfolioDialog(true);
+          }}
+          className="sr-only focus:not-sr-only focus:pointer-events-auto focus:mt-2 focus:px-2.5 focus:py-1 focus:rounded-md focus:bg-[#2b090e] focus:text-white focus:text-[11px] focus:font-sans focus:outline-none focus:ring-2 focus:ring-[#8c1d28]/60"
+        >
+          My Portfolio
+        </button>
+        <span
+          id="orb-portfolio-tooltip"
+          role="tooltip"
+          className={`pointer-events-none mt-2.5 px-2.5 py-1 rounded-md bg-[#2b090e] text-white font-sans text-[11px] font-normal tracking-[0.04em] whitespace-nowrap transition-all duration-150 ${
+            qrSelected && qrFlipped && (isBackIconHovering || isBackIconFocused)
+              ? 'opacity-100 translate-y-0'
+              : 'opacity-0 translate-y-1'
+          }`}
+        >
+          My Portfolio
+        </span>
       </div>
 
       {/* Subtle single-line interaction cue while QR sticker is expanded */}

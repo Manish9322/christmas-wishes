@@ -660,6 +660,15 @@ export function createFacetedWishGeometries(): WishShellGeometries {
       localOuterFaceNormal,
       qrFacet.color,
     );
+    const invSpan = 1 / (2 * qrSquareHalf);
+    qrOuterBuilder.uvs.push(
+      0.5 - p1.x * invSpan,
+      0.5 + p1.y * invSpan,
+      0.5 - p2.x * invSpan,
+      0.5 + p2.y * invSpan,
+      0.5 - p3.x * invSpan,
+      0.5 + p3.y * invSpan,
+    );
   };
 
   for (let k = 0; k < dIndices.length; k++) {
@@ -779,7 +788,7 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     upperEdgeGeometry: finalizeEdges(upper.edgePositions),
     lowerEdgeGeometry: finalizeEdges(lower.edgePositions),
     qrTile: {
-      outerGeo: finalizeMesh(qrOuterBuilder),
+      outerGeo: finalizeMesh(qrOuterBuilder, true),
       innerGeo: finalizeMesh(qrInnerBuilder, true),
       rimGeo: finalizeMesh(qrRimBuilder),
       outerEdgeGeo: finalizeEdges(qrOuterBuilder.edgePositions),

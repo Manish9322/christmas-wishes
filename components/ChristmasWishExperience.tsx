@@ -1,13 +1,13 @@
 'use client';
 
 import React, {useEffect, useRef, useState} from 'react';
-import Image from 'next/image';
 import * as THREE from 'three';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {motion, AnimatePresence} from 'motion/react';
 import {RotateCcw} from 'lucide-react';
 import QRCode from 'qrcode';
 import {createFacetedWishGeometries} from '@/lib/wish-geometry';
+import {createPortfolioBackMaterial} from '@/lib/portfolio-back-material';
 import portfolioIcon from '@/public/icon.png';
 
 type WishPhase = 'intact' | 'opened' | 'closing';
@@ -221,6 +221,8 @@ export default function ChristmasWishExperience() {
   const [isDraggingUI, setIsDraggingUI] = useState(false);
   const [qrSelected, setQrSelected] = useState(false);
   const [qrFlipped, setQrFlipped] = useState(false);
+  const [isBackIconHovering, setIsBackIconHovering] = useState(false);
+  const [isBackIconFocused, setIsBackIconFocused] = useState(false);
   const [showGithubDialog, setShowGithubDialog] = useState(false);
 
   const webglUnavailable = React.useSyncExternalStore(
@@ -233,6 +235,8 @@ export default function ChristmasWishExperience() {
   const zoomedInRef = useRef(false);
   const qrSelectedRef = useRef(false);
   const qrFlippedRef = useRef(false);
+  const backIconHoveredRef = useRef(false);
+  const backIconFocusedRef = useRef(false);
   const showDialogRef = useRef(false);
   const closeHandlerRef = useRef<(() => void) | null>(null);
   const deselectQrHandlerRef = useRef<(() => void) | null>(null);
@@ -479,12 +483,22 @@ export default function ChristmasWishExperience() {
       depthWrite: true,
     });
 
-    // Fixed, unlit solid monochrome colors for both sides of the floating tile (zero transparency, zero lighting shifts)
+    const BACK_ICON_FRACTION = 0.42;
+    const BACK_ICON_HIT_HALF = 0.235;
+
+    // Fixed, unlit solid monochrome colors for both sides of the floating tile (with integrated 3D icon on flipped back face)
     const qrFixedFaceMat = new THREE.MeshBasicMaterial({
       color: 0x18181b,
       toneMapped: false,
       transparent: false,
       depthWrite: true,
+    });
+
+    const qrBackHandle = createPortfolioBackMaterial({
+      bgHex: 0x18181b,
+      iconUrl: portfolioIcon.src,
+      iconFraction: BACK_ICON_FRACTION,
+      anisotropy: maxAnisotropy,
     });
 
     const qrFixedRimMat = new THREE.MeshBasicMaterial({
@@ -522,9 +536,9 @@ export default function ChristmasWishExperience() {
     qrOuterEdges.renderOrder = 3;
     qrTilePivot.add(qrOuterEdges);
 
-    // Anchor on the outer (back) face of the QR tile for aligning the flipped GitHub icon button
+    // Anchor at the bottom-center edge of the 3D portfolio icon on the outer (back) face for tooltip alignment
     const qrBackButtonAnchor = new THREE.Object3D();
-    qrBackButtonAnchor.position.set(0, 0, -0.085);
+    qrBackButtonAnchor.position.set(0, -qrTile.qrSquareHalf * BACK_ICON_FRACTION, -0.075);
     qrTilePivot.add(qrBackButtonAnchor);
 
     const intactInteractiveMeshes = [upperMesh, lowerMesh, qrOuterMesh];
@@ -627,6 +641,7 @@ export default function ChristmasWishExperience() {
     let qrFlipAngle = 0;
     let qrFloatWeight = 0;
     let qrFloatTime = 0;
+    let backIconColorMix = 0;
     let motionFactor = 1;
     let motionTime = 0;
     let confettiOpacityTarget = 1;
@@ -705,10 +720,32 @@ export default function ChristmasWishExperience() {
       spawnCelebrationBurst();
     };
 
+    const resetBackIconInteraction = () => {
+      if (backIconHoveredRef.current) {
+        backIconHoveredRef.current = false;
+        setIsBackIconHovering(false);
+      }
+      if (backIconFocusedRef.current) {
+        backIconFocusedRef.current = false;
+        setIsBackIconFocused(false);
+      }
+    };
+
+    const isBackIconHit = (hit: THREE.Intersection): boolean => {
+      if (!qrFlippedRef.current || hit.object !== qrOuterMesh || !hit.uv) {
+        return false;
+      }
+      return (
+        Math.abs(hit.uv.x - 0.5) <= BACK_ICON_HIT_HALF &&
+        Math.abs(hit.uv.y - 0.5) <= BACK_ICON_HIT_HALF
+      );
+    };
+
     const triggerSelectQr = () => {
       if (phaseRef.current !== 'opened' || qrSelectedRef.current) return;
       qrSelectedRef.current = true;
       qrFlippedRef.current = false;
+      resetBackIconInteraction();
       setQrSelected(true);
       setQrFlipped(false);
       setIsHoveringInteractive(false);
@@ -718,6 +755,7 @@ export default function ChristmasWishExperience() {
       if (!qrSelectedRef.current) return;
       const next = !qrFlippedRef.current;
       qrFlippedRef.current = next;
+      if (!next) resetBackIconInteraction();
       setQrFlipped(next);
     };
 
@@ -725,6 +763,7 @@ export default function ChristmasWishExperience() {
       if (!qrSelectedRef.current) return;
       qrSelectedRef.current = false;
       qrFlippedRef.current = false;
+      resetBackIconInteraction();
       setQrSelected(false);
       setQrFlipped(false);
       setShowGithubDialog(false);
@@ -753,11 +792,15 @@ export default function ChristmasWishExperience() {
       _pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       _raycaster.setFromCamera(_pointerNdc, camera);
 
-      // When enlarged QR polygon is active: clicking on the tile flips it; clicking elsewhere returns it in place
+      // When enlarged QR polygon is active: clicking the embedded icon opens portfolio dialog; clicking elsewhere on tile flips it; clicking outside returns it in place
       if (qrSelectedRef.current) {
         const tileHits = _raycaster.intersectObjects(qrTileHitMeshes, false);
         if (tileHits.length > 0) {
-          triggerToggleFlipQr();
+          if (isBackIconHit(tileHits[0])) {
+            setShowGithubDialog(true);
+          } else {
+            triggerToggleFlipQr();
+          }
         } else {
           triggerDeselectQr();
         }
@@ -888,14 +931,31 @@ export default function ChristmasWishExperience() {
           if (phaseRef.current === 'intact') {
             const hits = _raycaster.intersectObjects(intactInteractiveMeshes, false);
             setIsHoveringInteractive(hits.length > 0);
+            if (backIconHoveredRef.current) {
+              backIconHoveredRef.current = false;
+              setIsBackIconHovering(false);
+            }
           } else if (phaseRef.current === 'opened' && qrSelectedRef.current) {
             const hits = _raycaster.intersectObjects(qrTileHitMeshes, false);
             setIsHoveringInteractive(hits.length > 0);
+            const nextIconHover = hits.length > 0 && isBackIconHit(hits[0]);
+            if (nextIconHover !== backIconHoveredRef.current) {
+              backIconHoveredRef.current = nextIconHover;
+              setIsBackIconHovering(nextIconHover);
+            }
           } else if (phaseRef.current === 'opened') {
             const hits = _raycaster.intersectObjects(openedHitTestMeshes, false);
             setIsHoveringInteractive(hits.length > 0 && isQrInnerTarget(hits[0].object));
+            if (backIconHoveredRef.current) {
+              backIconHoveredRef.current = false;
+              setIsBackIconHovering(false);
+            }
           } else {
             setIsHoveringInteractive(false);
+            if (backIconHoveredRef.current) {
+              backIconHoveredRef.current = false;
+              setIsBackIconHovering(false);
+            }
           }
         }
       }
@@ -1311,7 +1371,25 @@ export default function ChristmasWishExperience() {
 
       qrTilePivot.updateMatrixWorld(true);
 
-      // Keep the GitHub icon button centered directly on the flipped outer side of the tile
+      // Smoothly transition the embedded 3D back-face icon between monochrome (rest) and full color (hover/focus)
+      const targetColorMix =
+        qrSelectedRef.current &&
+        qrFlippedRef.current &&
+        (backIconHoveredRef.current || backIconFocusedRef.current)
+          ? 1
+          : 0;
+      backIconColorMix = THREE.MathUtils.damp(
+        backIconColorMix,
+        targetColorMix,
+        15,
+        dt,
+      );
+      if (Math.abs(backIconColorMix - targetColorMix) < 0.002) {
+        backIconColorMix = targetColorMix;
+      }
+      qrBackHandle.setColorMix(backIconColorMix);
+
+      // Anchor the "My Portfolio" tooltip & keyboard trigger directly beneath the 3D surface icon
       const overlayEl = githubOverlayRef.current;
       if (overlayEl) {
         const flipProgress = qrFlipAngle / Math.PI;
@@ -1324,18 +1402,10 @@ export default function ChristmasWishExperience() {
           const h = container.clientHeight || window.innerHeight;
           const screenX = (_backWorldPos.x * 0.5 + 0.5) * w;
           const screenY = (-_backWorldPos.y * 0.5 + 0.5) * h;
-          const appear = THREE.MathUtils.clamp(
-            (flipProgress - 0.52) / 0.36,
-            0,
-            1,
-          );
-          const scale = 0.85 + 0.15 * appear;
-          overlayEl.style.opacity = appear.toFixed(3);
-          overlayEl.style.transform = `translate3d(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
-          overlayEl.style.pointerEvents = appear > 0.6 ? 'auto' : 'none';
+          overlayEl.style.opacity = '1';
+          overlayEl.style.transform = `translate3d(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px, 0) translate(-50%, 0)`;
         } else {
           overlayEl.style.opacity = '0';
-          overlayEl.style.pointerEvents = 'none';
         }
       }
 
@@ -1347,7 +1417,7 @@ export default function ChristmasWishExperience() {
         scene.add(qrTilePivot);
       }
 
-      const desiredOuterMat = useOverlayScene ? qrFixedFaceMat : shellMaterial;
+      const desiredOuterMat = useOverlayScene ? qrBackHandle.material : shellMaterial;
       if (qrOuterMesh.material !== desiredOuterMat) {
         qrOuterMesh.material = desiredOuterMat;
       }
@@ -1427,6 +1497,7 @@ export default function ChristmasWishExperience() {
       qrTile.outerEdgeGeo.dispose();
       shellMaterial.dispose();
       qrFixedFaceMat.dispose();
+      qrBackHandle.dispose();
       qrFixedRimMat.dispose();
       edgeMaterial.dispose();
       qrSubtleMat.dispose();
@@ -1562,43 +1633,44 @@ export default function ChristmasWishExperience() {
         </AnimatePresence>
       </div>
 
-      {/* Standalone Portfolio icon anchored on the flipped back face (monochrome at rest, color on hover, no circle/glow) */}
+      {/* Accessible keyboard trigger + tooltip anchored under the 3D surface portfolio icon */}
       <div
         ref={githubOverlayRef}
         aria-hidden={!(qrSelected && qrFlipped && wishPhase === 'opened')}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="fixed left-0 top-0 z-30 opacity-0 pointer-events-none"
+        className="pointer-events-none fixed left-0 top-0 z-30 flex flex-col items-center opacity-0"
       >
-        <div className="relative inline-flex items-center justify-center">
-          <button
-            type="button"
-            aria-label="My Portfolio"
-            aria-describedby="my-portfolio-tooltip"
-            tabIndex={qrSelected && qrFlipped && wishPhase === 'opened' ? 0 : -1}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowGithubDialog(true);
-            }}
-            className="group peer inline-flex items-center justify-center p-2 bg-transparent border-0 cursor-pointer focus-visible:outline-none"
-          >
-            <Image
-              src={portfolioIcon}
-              alt=""
-              width={48}
-              height={48}
-              referrerPolicy="no-referrer"
-              aria-hidden="true"
-              className="w-12 h-12 object-contain grayscale group-hover:grayscale-0 group-focus-visible:grayscale-0 transition-[filter] duration-200"
-            />
-          </button>
-          <span
-            id="my-portfolio-tooltip"
-            role="tooltip"
-            className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-zinc-950/95 border border-zinc-700/70 font-sans text-[11px] font-normal tracking-[0.04em] text-zinc-200 whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
-          >
-            My Portfolio
-          </span>
-        </div>
+        <button
+          type="button"
+          aria-label="My Portfolio"
+          aria-describedby="my-portfolio-tooltip"
+          tabIndex={qrSelected && qrFlipped && wishPhase === 'opened' ? 0 : -1}
+          onFocus={() => {
+            backIconFocusedRef.current = true;
+            setIsBackIconFocused(true);
+          }}
+          onBlur={() => {
+            backIconFocusedRef.current = false;
+            setIsBackIconFocused(false);
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowGithubDialog(true);
+          }}
+          className="sr-only focus:not-sr-only focus:pointer-events-auto focus:mt-2 focus:px-2.5 focus:py-1 focus:rounded-md focus:bg-zinc-950/95 focus:border focus:border-zinc-700/70 focus:text-zinc-200 focus:text-[11px] focus:font-sans focus:outline-none focus:ring-2 focus:ring-white/60"
+        >
+          My Portfolio
+        </button>
+        <span
+          id="my-portfolio-tooltip"
+          role="tooltip"
+          className={`pointer-events-none mt-2.5 px-2.5 py-1 rounded-md bg-zinc-950/95 border border-zinc-700/70 font-sans text-[11px] font-normal tracking-[0.04em] text-zinc-200 whitespace-nowrap transition-all duration-150 ${
+            qrSelected && qrFlipped && (isBackIconHovering || isBackIconFocused)
+              ? 'opacity-100 translate-y-0'
+              : 'opacity-0 translate-y-1'
+          }`}
+        >
+          My Portfolio
+        </span>
       </div>
 
       {/* Subtle single-line interaction cue while QR tile is enlarged */}

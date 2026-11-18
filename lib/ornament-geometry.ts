@@ -212,10 +212,17 @@ function createCompactQrStickerGeometry(
       0.5 + b.y * invSpan,
     );
 
-    // Back face (-Z, reverse winding)
+    // Back face (-Z, reverse winding with upright UVs when flipped 180 deg around Y)
     backPos.push(0, 0, zBack, b.x, b.y, zBack, a.x, a.y, zBack);
     backNorm.push(0, 0, -1, 0, 0, -1, 0, 0, -1);
-    backUv.push(0.5, 0.5, 0, 0, 0, 0);
+    backUv.push(
+      0.5,
+      0.5,
+      0.5 - b.x * invSpan,
+      0.5 + b.y * invSpan,
+      0.5 - a.x * invSpan,
+      0.5 + a.y * invSpan,
+    );
 
     // Wafer-thin solid edge wall connecting front & back
     const ex = b.x - a.x;
