@@ -13,6 +13,7 @@ import portfolioIcon from '@/public/icon.png';
 type OrnamentPhase = 'intact' | 'opened' | 'closing';
 
 const PROFILE_URL = 'https://manish-sonawane.vercel.app';
+const HIDE_ORB_QR_STICKER = true;
 
 const CAMERA_FOV_DEG = 40;
 const TAN_HALF_V = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
@@ -834,7 +835,7 @@ export default function OrnamentExperience() {
 
       if (phaseRef.current === 'opened') {
         const hits = _raycaster.intersectObjects(openedHitTestMeshes, false);
-        if (hits.length > 0 && isQrInnerTarget(hits[0].object)) {
+        if (!HIDE_ORB_QR_STICKER && hits.length > 0 && isQrInnerTarget(hits[0].object)) {
           triggerSelectQr();
           return;
         }
@@ -969,7 +970,9 @@ export default function OrnamentExperience() {
             }
           } else if (phaseRef.current === 'opened') {
             const hits = _raycaster.intersectObjects(openedHitTestMeshes, false);
-            setIsHoveringInteractive(hits.length > 0 && isQrInnerTarget(hits[0].object));
+            setIsHoveringInteractive(
+              !HIDE_ORB_QR_STICKER && hits.length > 0 && isQrInnerTarget(hits[0].object),
+            );
             if (backIconHoveredRef.current) {
               backIconHoveredRef.current = false;
               setIsBackIconHovering(false);
@@ -1427,7 +1430,8 @@ export default function OrnamentExperience() {
       }
 
       // Isolate expanded/flipped QR sticker into qrOverlayScene with solid opaque colors
-      qrTilePivot.visible = phaseRef.current !== 'intact' || qrAnimT > 0.001;
+      qrTilePivot.visible =
+        !HIDE_ORB_QR_STICKER && (phaseRef.current !== 'intact' || qrAnimT > 0.001);
       const useOverlayScene = qrSelectedRef.current || qrAnimT > 0.01;
       if (useOverlayScene && qrTilePivot.parent !== qrOverlayScene) {
         qrOverlayScene.add(qrTilePivot);
@@ -1435,7 +1439,8 @@ export default function OrnamentExperience() {
         scene.add(qrTilePivot);
       }
 
-      qrHitProxyMesh.visible = !useOverlayScene && phaseRef.current === 'opened';
+      qrHitProxyMesh.visible =
+        !HIDE_ORB_QR_STICKER && !useOverlayScene && phaseRef.current === 'opened';
 
       const desiredInnerMat = useOverlayScene ? qrScanMat : qrSubtleMat;
       if (qrInnerMesh.material !== desiredInnerMat) {
