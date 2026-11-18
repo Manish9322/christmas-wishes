@@ -408,10 +408,10 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     }
   }
 
-  // Pick the widest, most evenly proportioned lower-half inside-facing tile (7-sided heptagon on the
-  // upper-left rear wall) so there is generous dark tile margin on all sides around the QR code.
-  let qrFacetIdx = -1;
-  let bestQrScore = -Infinity;
+  // Locate the previous upper-left rear rim tile, then select the lower-half tile directly in front of it
+  // along its inward-facing normal across the lower egg shell.
+  let prevQrFacetIdx = -1;
+  let bestPrevScore = -Infinity;
   const tmpV = new THREE.Vector3();
   const tmpU = new THREE.Vector3();
   const tmpDelta = new THREE.Vector3();
@@ -439,9 +439,26 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     const horizLen = Math.max(0.2, Math.hypot(cx, cz));
     const rearVisibility = Math.max(0, -cz / horizLen);
     const score = halfSq + rearVisibility * 0.08;
-    if (score > bestQrScore) {
-      bestQrScore = score;
-      qrFacetIdx = fi;
+    if (score > bestPrevScore) {
+      bestPrevScore = score;
+      prevQrFacetIdx = fi;
+    }
+  }
+
+  let qrFacetIdx = -1;
+  if (prevQrFacetIdx !== -1) {
+    const prevFacet = facets[prevQrFacetIdx];
+    const prevInwardN = prevFacet.normal.clone().negate().normalize();
+    let bestFrontAlign = -Infinity;
+    for (let fi = 0; fi < facets.length; fi++) {
+      if (fi === prevQrFacetIdx || facets[fi].isUpper) continue;
+      const candidate = facets[fi];
+      tmpDelta.subVectors(candidate.centroidInner, prevFacet.centroidInner).normalize();
+      const align = tmpDelta.dot(prevInwardN);
+      if (align > bestFrontAlign) {
+        bestFrontAlign = align;
+        qrFacetIdx = fi;
+      }
     }
   }
 
@@ -621,24 +638,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
     );
   };
 
-  const pushSolidCapTri = (
-    a: THREE.Vector3,
-    b: THREE.Vector3,
-    c: THREE.Vector3,
-  ) => {
-    const abX = b.x - a.x;
-    const abY = b.y - a.y;
-    const acX = c.x - a.x;
-    const acY = c.y - a.y;
-    const crossZ = abX * acY - abY * acX;
-    const p1 = a;
-    const p2 = crossZ >= 0 ? b : c;
-    const p3 = crossZ >= 0 ? c : b;
-
-    pushTri(qrInnerBuilder, p1, p2, p3, localInwardFaceNormal, innerColor);
-    qrInnerBuilder.uvs.push(0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
-  };
-
   const pushQrOuterTri = (
     a: THREE.Vector3,
     b: THREE.Vector3,
@@ -674,9 +673,6 @@ export function createFacetedWishGeometries(): WishShellGeometries {
 
     // 1. Tile inside-facing QR face (+Z in tile-local space, with QR UV alignment)
     pushQrInnerTri(localCenterInner, iA, iB);
-
-    // 1b. Solid inner cap backing behind the QR texture to ensure 100% opacity with zero see-through
-    pushSolidCapTri(localCenterInner, iA, iB);
 
     // 2. Tile outer shell face (-Z in tile-local space, matching surrounding monochrome facets)
     pushQrOuterTri(localCenterOuter, oA, oB);
