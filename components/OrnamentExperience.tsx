@@ -69,12 +69,9 @@ function createQrTileTextures(url: string): {
   const qr = QRCode.create(url, {errorCorrectionLevel: 'M'});
   const count = qr.modules.size;
 
-  const tileBaseHex = '#182a26';
-
-  // 1. High-definition harmonized QR integrated on the inside-facing lower bowl plaque
+  // 1. Compact minimal sticker integrated inside the lower bowl (matte ivory face, deep oxblood modules)
   const subtleSize = 1024;
-  const subtleEdgePad = 4;
-  const subtleQuietPx = Math.round(subtleSize * 0.09);
+  const subtleQuietPx = Math.round(subtleSize * 0.11);
   const subtleSpan = subtleSize - subtleQuietPx * 2;
   const subtleModulePx = subtleSpan / count;
 
@@ -83,16 +80,9 @@ function createQrTileTextures(url: string): {
   subtleCanvas.height = subtleSize;
   const sCtx = subtleCanvas.getContext('2d');
   if (sCtx) {
-    sCtx.fillStyle = tileBaseHex;
+    sCtx.fillStyle = '#faf6f6';
     sCtx.fillRect(0, 0, subtleSize, subtleSize);
-    sCtx.fillStyle = '#ece9e1';
-    sCtx.fillRect(
-      subtleEdgePad,
-      subtleEdgePad,
-      subtleSize - subtleEdgePad * 2,
-      subtleSize - subtleEdgePad * 2,
-    );
-    sCtx.fillStyle = '#14221f';
+    sCtx.fillStyle = '#2b090e';
     for (let r = 0; r < count; r++) {
       for (let c = 0; c < count; c++) {
         if (qr.modules.get(r, c)) {
@@ -113,10 +103,9 @@ function createQrTileTextures(url: string): {
   subtleTex.minFilter = THREE.LinearFilter;
   subtleTex.magFilter = THREE.NearestFilter;
 
-  // 2. Full-contrast glare-free scannable texture framed with fixed pine-slate border
+  // 2. Full-contrast glare-free scannable texture in expanded preview state
   const scanSize = 1024;
-  const scanEdgePad = 4;
-  const scanQuietPx = Math.round(scanSize * 0.09);
+  const scanQuietPx = Math.round(scanSize * 0.11);
   const scanSpan = scanSize - scanQuietPx * 2;
   const scanModulePx = scanSpan / count;
 
@@ -125,16 +114,9 @@ function createQrTileTextures(url: string): {
   scanCanvas.height = scanSize;
   const fCtx = scanCanvas.getContext('2d');
   if (fCtx) {
-    fCtx.fillStyle = tileBaseHex;
-    fCtx.fillRect(0, 0, scanSize, scanSize);
     fCtx.fillStyle = '#ffffff';
-    fCtx.fillRect(
-      scanEdgePad,
-      scanEdgePad,
-      scanSize - scanEdgePad * 2,
-      scanSize - scanEdgePad * 2,
-    );
-    fCtx.fillStyle = '#09090b';
+    fCtx.fillRect(0, 0, scanSize, scanSize);
+    fCtx.fillStyle = '#140407';
     for (let r = 0; r < count; r++) {
       for (let c = 0; c < count; c++) {
         if (qr.modules.get(r, c)) {
@@ -165,10 +147,10 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d');
   if (ctx) {
     const grad = ctx.createRadialGradient(128, 128, 8, 128, 128, 124);
-    grad.addColorStop(0, 'rgba(15, 24, 22, 0.28)');
-    grad.addColorStop(0.42, 'rgba(15, 24, 22, 0.12)');
-    grad.addColorStop(0.75, 'rgba(15, 24, 22, 0.03)');
-    grad.addColorStop(1, 'rgba(15, 24, 22, 0)');
+    grad.addColorStop(0, 'rgba(38, 8, 13, 0.25)');
+    grad.addColorStop(0.42, 'rgba(38, 8, 13, 0.11)');
+    grad.addColorStop(0.75, 'rgba(38, 8, 13, 0.025)');
+    grad.addColorStop(1, 'rgba(38, 8, 13, 0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 256, 256);
   }
@@ -349,11 +331,11 @@ export default function OrnamentExperience() {
     scene.add(bounceLight);
 
     // Soft interior illumination when the orb opens
-    const interiorLight = new THREE.PointLight(0xfff8eb, 0, 7, 1.8);
+    const interiorLight = new THREE.PointLight(0xffe4e6, 0, 7, 1.8);
     interiorLight.position.set(0, 0, 0);
     scene.add(interiorLight);
 
-    // Isolated overlay scene so enlarged/flipped QR tile renders 100% opaque above soft white veil
+    // Isolated overlay scene so enlarged/flipped QR sticker renders 100% opaque above soft white veil
     const qrOverlayScene = new THREE.Scene();
     qrOverlayScene.environment = envTarget.texture;
     const qrOverlayHemi = new THREE.HemisphereLight(0xffffff, 0xcbd5e1, 1.02);
@@ -403,33 +385,33 @@ export default function OrnamentExperience() {
       metalness: 0.14,
       clearcoat: 0.9,
       clearcoatRoughness: 0.08,
-      envMapIntensity: 1.15,
+      envMapIntensity: 1.1,
     });
 
     const innerCavityMat = new THREE.MeshStandardMaterial({
-      color: 0x182220,
+      color: 0x26080d,
       roughness: 0.84,
       metalness: 0.08,
     });
 
     const rimBevelMat = new THREE.MeshStandardMaterial({
-      color: 0xb5945b,
-      roughness: 0.26,
-      metalness: 0.84,
+      color: 0x7d2932,
+      roughness: 0.28,
+      metalness: 0.72,
       envMapIntensity: 1.15,
     });
 
     const capMat = new THREE.MeshStandardMaterial({
-      color: 0xc2a46f,
+      color: 0x6b1d26,
       roughness: 0.28,
-      metalness: 0.88,
-      envMapIntensity: 1.15,
+      metalness: 0.82,
+      envMapIntensity: 1.2,
     });
 
-    const hardwareBrassMat = new THREE.MeshStandardMaterial({
-      color: 0xb39055,
-      roughness: 0.18,
-      metalness: 0.92,
+    const hardwareCrimsonMat = new THREE.MeshStandardMaterial({
+      color: 0x82242e,
+      roughness: 0.2,
+      metalness: 0.86,
       envMapIntensity: 1.25,
     });
 
@@ -449,13 +431,13 @@ export default function OrnamentExperience() {
     capBodyMesh.castShadow = !isSoftwareGl;
     upperPivot.add(capBodyMesh);
 
-    const capCollarMesh = new THREE.Mesh(parts.capCollarGeo, hardwareBrassMat);
+    const capCollarMesh = new THREE.Mesh(parts.capCollarGeo, hardwareCrimsonMat);
     upperPivot.add(capCollarMesh);
 
-    const pinMesh = new THREE.Mesh(parts.pinGeo, hardwareBrassMat);
+    const pinMesh = new THREE.Mesh(parts.pinGeo, hardwareCrimsonMat);
     upperPivot.add(pinMesh);
 
-    const loopMesh = new THREE.Mesh(parts.loopGeo, hardwareBrassMat);
+    const loopMesh = new THREE.Mesh(parts.loopGeo, hardwareCrimsonMat);
     loopMesh.castShadow = !isSoftwareGl;
     upperPivot.add(loopMesh);
 
@@ -471,7 +453,7 @@ export default function OrnamentExperience() {
     const lowerRimMesh = new THREE.Mesh(parts.lowerRimGeo, rimBevelMat);
     lowerPivot.add(lowerRimMesh);
 
-    // Soft pure-white studio veil rendered between background orb and enlarged QR tile
+    // Soft pure-white studio veil rendered between background orb and expanded QR sticker
     const backdropDimGeo = new THREE.PlaneGeometry(40, 40);
     const backdropDimMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -485,7 +467,7 @@ export default function OrnamentExperience() {
     backdropDimPlane.visible = false;
     scene.add(backdropDimPlane);
 
-    // Home slot inside lowerPivot tracks exact position & orientation of the QR plaque
+    // Home slot inside lowerPivot tracks exact position & orientation of the compact QR sticker
     const {qrTile} = parts;
     const qrHomeSlot = new THREE.Object3D();
     qrHomeSlot.position.copy(qrTile.anchorPosition);
@@ -493,6 +475,7 @@ export default function OrnamentExperience() {
     lowerPivot.add(qrHomeSlot);
 
     const qrTilePivot = new THREE.Group();
+    qrTilePivot.visible = false;
     scene.add(qrTilePivot);
 
     const {subtleTex, scanTex} = createQrTileTextures(PROFILE_URL);
@@ -513,16 +496,16 @@ export default function OrnamentExperience() {
       depthWrite: true,
     });
 
-    // Fixed unlit solid deep pine-slate color on both faces & muted satin bronze bezel (zero transparency)
+    // Solid opaque oxblood burgundy back face & thin edge (zero transparency)
     const qrFixedFaceMat = new THREE.MeshBasicMaterial({
-      color: 0x182a26,
+      color: 0x4d0f17,
       toneMapped: false,
       transparent: false,
       depthWrite: true,
     });
 
     const qrFixedRimMat = new THREE.MeshBasicMaterial({
-      color: 0x8f7548,
+      color: 0x380a10,
       toneMapped: false,
       transparent: false,
       depthWrite: true,
@@ -530,7 +513,7 @@ export default function OrnamentExperience() {
 
     const qrOuterMesh = new THREE.Mesh<THREE.BufferGeometry, THREE.Material>(
       qrTile.outerGeo,
-      outerShellMat,
+      qrFixedFaceMat,
     );
     qrOuterMesh.castShadow = false;
     qrOuterMesh.receiveShadow = false;
@@ -539,7 +522,7 @@ export default function OrnamentExperience() {
 
     const qrInnerMesh = new THREE.Mesh<THREE.BufferGeometry, THREE.Material>(
       qrTile.innerGeo,
-      qrFixedFaceMat,
+      qrSubtleMat,
     );
     qrInnerMesh.castShadow = false;
     qrInnerMesh.receiveShadow = false;
@@ -552,9 +535,19 @@ export default function OrnamentExperience() {
     qrRimMesh.renderOrder = 2;
     qrTilePivot.add(qrRimMesh);
 
-    // Anchor centered on the outer (back) face of the QR tile for aligning the flipped portfolio icon
+    // Invisible touch-friendly hit target over compact docked sticker for effortless mobile tapping
+    const qrHitProxyGeo = new THREE.PlaneGeometry(0.32, 0.32);
+    const qrHitProxyMat = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthWrite: false,
+    });
+    const qrHitProxyMesh = new THREE.Mesh(qrHitProxyGeo, qrHitProxyMat);
+    qrHitProxyMesh.position.set(0, 0, 0.006);
+    qrTilePivot.add(qrHitProxyMesh);
+
+    // Anchor centered on the reverse face of the flipped sticker for aligning the portfolio icon
     const qrBackButtonAnchor = new THREE.Object3D();
-    qrBackButtonAnchor.position.set(0, 0, -0.082);
+    qrBackButtonAnchor.position.set(0, 0, -0.008);
     qrTilePivot.add(qrBackButtonAnchor);
 
     const intactInteractiveMeshes = [
@@ -562,7 +555,6 @@ export default function OrnamentExperience() {
       lowerOuterMesh,
       capBodyMesh,
       loopMesh,
-      qrOuterMesh,
     ];
     const qrTileHitMeshes = [qrOuterMesh, qrInnerMesh, qrRimMesh];
     const openedHitTestMeshes = [
@@ -575,10 +567,12 @@ export default function OrnamentExperience() {
       qrOuterMesh,
       qrInnerMesh,
       qrRimMesh,
+      qrHitProxyMesh,
     ];
-    const isQrInnerTarget = (obj: THREE.Object3D): boolean => obj === qrInnerMesh;
+    const isQrInnerTarget = (obj: THREE.Object3D): boolean =>
+      obj === qrInnerMesh || obj === qrHitProxyMesh;
 
-    // Refined Architectural 3D Confetti InstancedMeshes (ribbons + diamond shards)
+    // Refined Red 3D Confetti InstancedMeshes (ribbons + diamond shards)
     const ribbonCount = 100;
     const shardCount = 80;
     const totalConfetti = ribbonCount + shardCount;
@@ -605,16 +599,16 @@ export default function OrnamentExperience() {
     scene.add(ribbonMesh);
     scene.add(shardMesh);
 
-    // Balanced, high-contrast hues tuned for visibility against pure white background
+    // Sophisticated spectrum of reds, dark reds, and muted crimsons on pure white
     const confettiColors = [
-      0x182a26, // deep pine-slate
-      0x2d4a43, // forest moss
-      0x8c6d3f, // burnished bronze
-      0xb89860, // brushed champagne
-      0x7c3a3a, // muted garnet
-      0x27272a, // charcoal ink
-      0x64748b, // cool slate
-      0x475569, // deep pewter
+      0x4d0f17, // deep oxblood burgundy
+      0x6b1620, // dark wine red
+      0x8c1d28, // muted crimson
+      0xa62a34, // rich carmine
+      0x73242c, // velvet oxblood
+      0xb84a52, // dusty rosewood red
+      0x360a10, // espresso burgundy
+      0x943840, // muted garnet
     ];
 
     const cPos = new Float32Array(totalConfetti * 3);
@@ -1369,7 +1363,8 @@ export default function OrnamentExperience() {
         }
       }
 
-      // Isolate lifted/flipped tile into qrOverlayScene with opaque fixed solid face colors
+      // Isolate expanded/flipped QR sticker into qrOverlayScene with solid opaque colors
+      qrTilePivot.visible = phaseRef.current !== 'intact' || qrAnimT > 0.001;
       const useOverlayScene = qrSelectedRef.current || qrAnimT > 0.01;
       if (useOverlayScene && qrTilePivot.parent !== qrOverlayScene) {
         qrOverlayScene.add(qrTilePivot);
@@ -1377,16 +1372,9 @@ export default function OrnamentExperience() {
         scene.add(qrTilePivot);
       }
 
-      const desiredOuterMat = useOverlayScene ? qrFixedFaceMat : outerShellMat;
-      if (qrOuterMesh.material !== desiredOuterMat) {
-        qrOuterMesh.material = desiredOuterMat;
-      }
+      qrHitProxyMesh.visible = !useOverlayScene && phaseRef.current === 'opened';
 
-      const desiredInnerMat = useOverlayScene
-        ? qrScanMat
-        : phaseRef.current === 'opened'
-          ? qrSubtleMat
-          : qrFixedFaceMat;
+      const desiredInnerMat = useOverlayScene ? qrScanMat : qrSubtleMat;
       if (qrInnerMesh.material !== desiredInnerMat) {
         qrInnerMesh.material = desiredInnerMat;
       }
@@ -1457,17 +1445,18 @@ export default function OrnamentExperience() {
       qrTile.outerGeo.dispose();
       qrTile.innerGeo.dispose();
       qrTile.rimGeo.dispose();
-      qrTile.outerEdgeGeo.dispose();
 
       outerShellMat.dispose();
       innerCavityMat.dispose();
       rimBevelMat.dispose();
       capMat.dispose();
-      hardwareBrassMat.dispose();
+      hardwareCrimsonMat.dispose();
       qrFixedFaceMat.dispose();
       qrFixedRimMat.dispose();
       qrSubtleMat.dispose();
       qrScanMat.dispose();
+      qrHitProxyGeo.dispose();
+      qrHitProxyMat.dispose();
       subtleTex.dispose();
       scanTex.dispose();
       backdropDimGeo.dispose();
@@ -1512,8 +1501,8 @@ export default function OrnamentExperience() {
       {webglUnavailable && (
         <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
           <div className="max-w-sm space-y-2">
-            <h1 className="font-display text-3xl text-[#182220]">Spiral Sphere</h1>
-            <p className="text-sm text-zinc-600">
+            <h1 className="font-display text-3xl text-[#3b0b12]">Spiral Sphere</h1>
+            <p className="text-sm text-[#574043]">
               WebGL is unavailable in this browser environment.
             </p>
           </div>
@@ -1545,7 +1534,7 @@ export default function OrnamentExperience() {
               className="flex flex-col items-center text-center max-w-md"
             >
               <h1
-                className="font-display font-normal tracking-[0.015em] text-[#182220] select-none"
+                className="font-display font-normal tracking-[0.015em] text-[#3b0b12] select-none"
                 style={{
                   fontSize: 'clamp(2.85rem, 6.8vw, 5.25rem)',
                   lineHeight: 1.24,
@@ -1560,7 +1549,7 @@ export default function OrnamentExperience() {
                 initial={{opacity: 0, y: 8}}
                 animate={{opacity: 1, y: 0}}
                 transition={{delay: 0.42, duration: 0.65, ease: [0.16, 1, 0.3, 1]}}
-                className="mt-2 sm:mt-2.5 font-sans font-normal text-[15px] sm:text-base leading-[1.7] tracking-[0.02em] text-zinc-600 select-none"
+                className="mt-2 sm:mt-2.5 font-sans font-normal text-[15px] sm:text-base leading-[1.7] tracking-[0.02em] text-[#4a3538] select-none"
                 style={{textWrap: 'pretty'}}
               >
                 Wishing you a peaceful season filled with quiet wonder, warmth at
@@ -1582,14 +1571,14 @@ export default function OrnamentExperience() {
                     aria-describedby="close-ornament-tooltip"
                     tabIndex={qrSelected ? -1 : 0}
                     onClick={() => closeHandlerRef.current?.()}
-                    className="peer inline-flex items-center justify-center w-11 h-11 rounded-full bg-white hover:bg-zinc-100 border border-zinc-300 hover:border-zinc-500 text-zinc-700 hover:text-zinc-950 shadow-[0_4px_16px_rgba(15,23,42,0.08)] transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#182a26]/50"
+                    className="peer inline-flex items-center justify-center w-11 h-11 rounded-full bg-white hover:bg-[#fdf5f5] border border-[#d6b8bc] hover:border-[#8c1d28] text-[#5c161e] hover:text-[#3b0b12] shadow-[0_4px_16px_rgba(59,11,18,0.08)] transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8c1d28]/50"
                   >
                     <RotateCcw size={16} strokeWidth={1.65} aria-hidden="true" />
                   </button>
                   <span
                     id="close-ornament-tooltip"
                     role="tooltip"
-                    className="pointer-events-none absolute top-full mt-2.5 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-50 font-sans text-[11px] font-normal tracking-[0.04em] whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
+                    className="pointer-events-none absolute top-full mt-2.5 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-[#2b090e] text-white font-sans text-[11px] font-normal tracking-[0.04em] whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
                   >
                     Close ornament
                   </span>
@@ -1632,14 +1621,14 @@ export default function OrnamentExperience() {
           <span
             id="orb-portfolio-tooltip"
             role="tooltip"
-            className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-50 font-sans text-[11px] font-normal tracking-[0.04em] whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
+            className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-[#2b090e] text-white font-sans text-[11px] font-normal tracking-[0.04em] whitespace-nowrap opacity-0 translate-y-1 peer-hover:opacity-100 peer-hover:translate-y-0 peer-focus-visible:opacity-100 peer-focus-visible:translate-y-0 transition-all duration-150"
           >
             My Portfolio
           </span>
         </div>
       </div>
 
-      {/* Subtle single-line interaction cue while QR tile is enlarged */}
+      {/* Subtle single-line interaction cue while QR sticker is expanded */}
       <AnimatePresence>
         {qrSelected && ornamentPhase === 'opened' && (
           <motion.p
@@ -1647,10 +1636,10 @@ export default function OrnamentExperience() {
             animate={{opacity: 0.85}}
             exit={{opacity: 0}}
             transition={{duration: 0.3}}
-            className="pointer-events-none fixed bottom-6 inset-x-0 z-20 flex items-center justify-center text-center font-sans font-normal text-xs tracking-[0.05em] text-zinc-600 px-4 select-none"
+            className="pointer-events-none fixed bottom-6 inset-x-0 z-20 flex items-center justify-center text-center font-sans font-normal text-xs tracking-[0.05em] text-[#5e4447] px-4 select-none"
           >
             <span>{qrFlipped ? 'Click tile for QR' : 'Click tile to flip'}</span>
-            <span aria-hidden="true" className="mx-2.5 text-zinc-300">
+            <span aria-hidden="true" className="mx-2.5 text-[#d8c4c6]">
               |
             </span>
             <span>Click elsewhere to close</span>
@@ -1667,7 +1656,7 @@ export default function OrnamentExperience() {
             exit={{opacity: 0}}
             transition={{duration: 0.2}}
             onClick={() => setShowPortfolioDialog(false)}
-            className="fixed inset-0 z-40 flex items-center justify-center bg-zinc-950/35 px-6"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-[#1a0508]/30 px-6"
           >
             <motion.div
               role="dialog"
@@ -1679,17 +1668,17 @@ export default function OrnamentExperience() {
               exit={{opacity: 0, scale: 0.96, y: 4}}
               transition={{duration: 0.22, ease: [0.16, 1, 0.3, 1]}}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-2xl bg-white border border-zinc-200 p-6 shadow-[0_24px_64px_rgba(15,23,42,0.16)] text-left font-sans"
+              className="w-full max-w-sm rounded-2xl bg-white border border-[#e8d5d7] p-6 shadow-[0_24px_64px_rgba(59,11,18,0.16)] text-left font-sans"
             >
               <h2
                 id="orb-portfolio-dialog-title"
-                className="text-base font-medium tracking-[0.015em] text-zinc-900"
+                className="text-base font-medium tracking-[0.015em] text-[#2b090e]"
               >
                 Visit Portfolio?
               </h2>
               <p
                 id="orb-portfolio-dialog-description"
-                className="mt-2.5 text-sm leading-relaxed text-zinc-600"
+                className="mt-2.5 text-sm leading-relaxed text-[#574043]"
               >
                 You&apos;re about to visit manish-sonawane.vercel.app. Would
                 you like to continue?
@@ -1699,7 +1688,7 @@ export default function OrnamentExperience() {
                 <button
                   type="button"
                   onClick={() => setShowPortfolioDialog(false)}
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-700 hover:text-zinc-950 text-xs font-medium tracking-[0.03em] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#182a26]/40"
+                  className="inline-flex items-center justify-center h-9 px-4 rounded-lg border border-[#d9c2c4] bg-white hover:bg-[#fdf5f5] text-[#4a3538] hover:text-[#2b090e] text-xs font-medium tracking-[0.03em] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8c1d28]/40"
                 >
                   Cancel
                 </button>
@@ -1708,7 +1697,7 @@ export default function OrnamentExperience() {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setShowPortfolioDialog(false)}
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-[#182a26] hover:bg-[#111f1c] text-white text-xs font-medium tracking-[0.03em] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#182a26]/50"
+                  className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-[#7a1923] hover:bg-[#5c1119] text-white text-xs font-medium tracking-[0.03em] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8c1d28]/50"
                 >
                   Continue
                 </a>
@@ -1726,18 +1715,18 @@ export default function OrnamentExperience() {
             animate={{opacity: 0.85}}
             exit={{opacity: 0}}
             transition={{duration: 0.45}}
-            className="pointer-events-none fixed bottom-6 inset-x-0 z-20 flex items-center justify-center text-center font-sans font-normal text-xs tracking-[0.05em] text-zinc-600 px-4"
+            className="pointer-events-none fixed bottom-6 inset-x-0 z-20 flex items-center justify-center text-center font-sans font-normal text-xs tracking-[0.05em] text-[#5e4447] px-4"
           >
             {isZoomedIn ? (
               'Click ornament to reset zoom'
             ) : (
               <>
                 <span>Drag to rotate</span>
-                <span aria-hidden="true" className="mx-2.5 text-zinc-300">
+                <span aria-hidden="true" className="mx-2.5 text-[#d8c4c6]">
                   |
                 </span>
                 <span>Scroll to zoom</span>
-                <span aria-hidden="true" className="mx-2.5 text-zinc-300">
+                <span aria-hidden="true" className="mx-2.5 text-[#d8c4c6]">
                   |
                 </span>
                 <span>Click to open</span>
